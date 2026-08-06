@@ -1,0 +1,42 @@
+[Unit]
+Description=SO 服务商转化漏斗 (FastAPI)
+After=network-online.target
+Wants=network-online.target
+# 重启限流属于 [Unit]，放 [Service] 会被 systemd 忽略并告警
+StartLimitIntervalSec=180
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/so-funnel
+Environment="PYTHONUNBUFFERED=1"
+Environment="PATH=/opt/so-funnel/venv/bin:/usr/local/bin:/usr/bin:/bin"
+# 认证凭证放在独立文件里（chmod 600），不写进 unit，避免 systemctl cat 泄露
+EnvironmentFile=/etc/so-funnel/funnel.env
+
+# 单 worker：SQLite 写入 + WAL，多 worker 会增加写锁竞争，这个体量没必要
+# 0.0.0.0 公网直访（跟 streamlit 8501 一个路子），入口靠 EnvironmentFile 里的
+# Basic Auth 把守。要上 TLS 就改回 127.0.0.1 并在 nginx 加 server 块反代。
+# 端口 8443：ufw 里本来就放行且无人占用，不用改防火墙规则。
+ExecStart=/opt/so-funnel/venv/bin/python -m uvicorn api.main:app \
+    --host 0.0.0.0 \
+    --port 8443 \
+    --workers 1 \
+    --proxy-headers
+
+Restart=always
+RestartSec=5
+
+StandardOutput=append:/opt/so-funnel/logs/funnel.log
+StandardError=append:/opt/so-funnel/logs/funnel.err
+
+# 服务器 3.4G RAM，streamlit 那个服务已占 3G 上限；这个只给 512M
+MemoryMax=512M
+OOMScoreAdjust=400
+OOMPolicy=kill
+LimitNOFILE=8192
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

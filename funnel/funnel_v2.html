@@ -1,0 +1,1741 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>服务商转化漏斗 v2</title>
+<style>
+:root {
+  --blue:#1677ff;--blue-l:#e6f4ff;--blue-d:#0958d9;
+  --green:#52c41a;--green-l:#f6ffed;
+  --yellow:#faad14;--yellow-l:#fffbe6;
+  --red:#ff4d4f;--red-l:#fff2f0;
+  --orange:#fa8c16;--orange-l:#fff7e6;
+  --gray:#8c8c8c;--gray-l:#f5f5f5;--border:#e8e8e8;
+  --text:#141414;--text-s:#595959;--radius:8px;
+  --shadow:0 2px 8px rgba(0,0,0,.08);
+  --dock-w:320px;          /* 待办侧栏宽度，锁定态 body 右侧让出同宽 */
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+     background:#f0f2f5;color:var(--text);font-size:14px}
+
+/* Header */
+.hdr{background:#fff;border-bottom:none;padding:0;
+     position:sticky;top:0;z-index:100;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.hdrTop{display:flex;align-items:center;gap:12px;padding:0 24px;height:46px}
+.hdr h1{font-size:15px;font-weight:600;white-space:nowrap}
+.hdr .sp{flex:1}
+.badge{padding:2px 8px;border-radius:4px;font-size:12px;
+       background:#fff7e6;color:#d46b08;border:1px solid #ffd591}
+/* Period row (inside header) */
+.hdrPeriod{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+           padding:6px 24px 8px;border-top:1px solid var(--border);background:#fafafa}
+
+/* Geo Nav */
+.geo-nav{background:#fff;border-bottom:1px solid var(--border);
+         padding:0 24px;display:flex;gap:4px;align-items:center;
+         overflow-x:auto;scrollbar-width:none;height:44px}
+.geo-nav::-webkit-scrollbar{display:none}
+.navSp{flex:1;min-width:12px}
+.certGrp{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.certLbl{font-size:12px;color:var(--muted);flex-shrink:0}
+.certTabs{display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.certTab{border:0;background:#fff;padding:5px 12px;font-size:12px;cursor:pointer;
+  color:var(--text-s);border-left:1px solid var(--border);white-space:nowrap}
+.certTab:first-child{border-left:0}
+.certTab:hover{background:#f5f5f5}
+.certTab.on{background:#1677ff;color:#fff}
+.certTab .cnt{opacity:.75;font-size:11px;margin-left:3px}
+.caveat{margin-top:14px;padding:10px 12px;background:#fffbe6;border:1px solid #ffe58f;
+  border-radius:6px;font-size:12px;line-height:1.6;color:#874d00}
+.penBox{margin-bottom:16px;padding:14px 16px;background:linear-gradient(135deg,#e6f4ff,#f0f5ff);
+  border:1px solid #91caff;border-radius:8px}
+.penMain{display:flex;align-items:center;gap:12px}
+.penNum{font-size:34px;font-weight:700;color:#0958d9;line-height:1}
+.penLbl{font-size:13px;font-weight:600;color:var(--text);line-height:1.5}
+.penFml{font-size:11px;font-weight:400;color:var(--muted)}
+.penSide{margin-top:8px;font-size:12px;color:var(--muted)}
+.tierLine{margin-top:12px;padding:10px 12px;background:#fafafa;border:1px solid var(--line);
+  border-radius:6px;font-size:12px;color:var(--text)}
+.tierLine b{color:#0958d9}
+.gLbl{font-size:14px;font-weight:600;color:var(--text);flex-shrink:0}
+.gSelect{font-size:14px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;
+  background:#fff;color:var(--text);cursor:pointer;min-width:130px;font-family:inherit}
+.gSelect:hover{border-color:var(--blue)}
+.gSelect:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-l)}
+.gBtn{border:none;background:transparent;padding:5px 11px;border-radius:6px;
+      cursor:pointer;font-size:13px;color:var(--text-s);white-space:nowrap;transition:all .15s}
+.gBtn:hover{background:var(--gray-l);color:var(--text)}
+.gBtn.on{background:var(--blue-l);color:var(--blue);font-weight:600}
+.sep{color:var(--border);font-size:18px;flex-shrink:0}
+
+/* Period tabs */
+.pTabs{display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.pTab{border:none;background:#fff;padding:5px 14px;cursor:pointer;font-size:13px;
+      color:var(--text-s);border-right:1px solid var(--border);transition:all .15s}
+.pTab:last-child{border-right:none}
+.pTab.on{background:var(--blue-l);color:var(--blue);font-weight:600}
+/* Period dropdown */
+.pSelect{border:1px solid var(--border);border-radius:6px;padding:5px 10px;
+         font-size:13px;color:var(--text);background:#fff;cursor:pointer;
+         max-width:220px}
+.pSelect:focus{outline:none;border-color:var(--blue)}
+.pDateRange{font-size:12px;color:var(--text-s);background:var(--gray-l);
+            padding:3px 10px;border-radius:4px;white-space:nowrap}
+/* Save status indicator */
+.saveStatus{font-size:12px;padding:3px 10px;border-radius:4px;white-space:nowrap;
+            transition:all .3s}
+.saveStatus.saving{color:var(--blue);background:var(--blue-l)}
+.saveStatus.saved{color:var(--green);background:var(--green-l)}
+.saveStatus.error{color:var(--red);background:var(--red-l)}
+.saveStatus.offline{color:var(--gray);background:var(--gray-l)}
+
+/* Layout */
+/* 横向漏斗五阶 + 四个箭头要横向铺开，比原来的竖排费宽度，故放宽画布 */
+.main{max-width:1320px;margin:20px auto;padding:0 24px;
+      display:flex;flex-direction:column;gap:20px}
+/* ⚠️ 第一列必须写 minmax(0,1fr) 而不是 1fr。1fr 的隐含最小值是 auto = min-content，
+   而「完成情况」那张表是 white-space:nowrap 的宽表，min-content 极大 —— 结果这一列
+   拒绝收缩、整行向右溢出（锁定待办侧栏时就滑到侧栏底下去，看着像"没变窄"）。
+   写成 minmax(0,1fr) 才允许压到 0 以下界，超宽的表交给 #sideWrap 的
+   overflow-x:auto 横向滚动。上面 .funnelLayout 同理，两处要一致。 */
+.bottomRow{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:20px}
+@media(max-width:900px){.bottomRow{grid-template-columns:1fr}}
+.card{background:#fff;border-radius:var(--radius);box-shadow:var(--shadow)}
+.cHdr{padding:14px 20px 10px;border-bottom:1px solid var(--border);
+      display:flex;align-items:center;justify-content:space-between}
+.cTitle{font-size:14px;font-weight:600}
+.cSub{font-size:12px;color:var(--gray)}
+/* Funnel — 横向：柱子从左到右依次收窄，箭头夹在相邻两阶之间 */
+.fWrap{padding:18px 16px 12px}
+/* 五阶 + 四个箭头 = 9 列。柱子列等宽，箭头列按内容宽度自适应。
+   柱子列同样写 minmax(0,1fr)：1fr 的隐含最小值是 min-content（阶段名 + 百分比那行），
+   卡片被待办侧栏挤窄时会撑住不让步，柱子就不跟着变细了。 */
+.fFlow{display:grid;
+       grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr)
+                             auto minmax(0,1fr) auto minmax(0,1fr);
+       align-items:end;gap:0;overflow-x:auto;padding-bottom:4px}
+.fCol{display:flex;flex-direction:column;align-items:center;min-width:62px}
+/* 柱高按占比，容器给固定高度做基线对齐 —— 让"逐层收窄"一眼看出来 */
+.fBarBox{height:150px;display:flex;align-items:flex-end;width:100%;
+         justify-content:center}
+.fBar{width:100%;max-width:58px;border-radius:5px 5px 0 0;position:relative;
+      display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
+      padding-top:6px;transition:height .4s ease;min-height:26px}
+.fBar .fNum{font-size:13px;font-weight:700;color:#fff;line-height:1.2}
+.fBar .fPeriod{font-size:10px;color:rgba(255,255,255,.9);margin-top:2px;
+               background:rgba(0,0,0,.18);border-radius:3px;padding:0 4px}
+/* 柱子太矮时数字压不进去，翻到柱顶外面 */
+.fBar.short .fNum{position:absolute;top:-19px;color:var(--text)}
+.fBar.short .fPeriod{position:absolute;top:-4px;color:var(--text-s);
+                     background:var(--gray-l)}
+.fLbl{margin-top:8px;font-size:12px;font-weight:600;color:var(--text);
+      text-align:center;line-height:1.35}
+.fLbl small{display:block;font-weight:400;font-size:10px;color:var(--text-s)}
+.fCount{margin-top:3px;font-size:11px;color:var(--text-s);text-align:center}
+
+/* Conversion arrow — 竖排徽标，夹在两根柱子中间 */
+.aWrap{display:flex;flex-direction:column;align-items:center;gap:3px;
+       padding:0 5px 46px;min-width:56px}
+.aWrap.sel{background:var(--blue-l);border-radius:6px}
+.aArrowGlyph{color:var(--gray);font-size:13px;line-height:1}
+.aBadgeRow{display:flex;flex-direction:column;align-items:center;gap:3px}
+.aRate{padding:2px 7px;border-radius:20px;font-size:12px;font-weight:700;
+       border:1.5px solid;white-space:nowrap;cursor:default}
+.aRate.good{color:var(--green);border-color:var(--green);background:var(--green-l)}
+.aRate.warn{color:var(--yellow);border-color:var(--yellow);background:var(--yellow-l)}
+.aRate.bad{color:var(--red);border-color:var(--red);background:var(--red-l)}
+.aToggle{border:none;background:none;color:var(--blue);cursor:pointer;
+          font-size:11px;padding:2px 5px;border-radius:4px;white-space:nowrap}
+.aToggle:hover{background:var(--blue-l)}
+.aPeriodRate{font-size:12px;color:var(--text-s);
+             background:var(--gray-l);padding:2px 8px;border-radius:4px}
+
+/* Factors panel */
+.fPanel{padding:6px 0 4px;display:none}
+.fPanel.open{display:block}
+.fItem{display:flex;align-items:center;gap:8px;padding:5px 0;
+       border-top:1px dashed var(--border)}
+.fItem:first-child{border-top:none}
+.fDot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.fDot.good{background:var(--green)}.fDot.warn{background:var(--yellow)}.fDot.bad{background:var(--red)}
+.fName{font-size:13px;color:var(--text-s);min-width:148px;flex-shrink:0}
+.fVal{font-weight:600;font-size:13px;min-width:50px}
+.fTgt{font-size:12px;color:var(--gray)}
+.srcBadge{font-size:11px;padding:1px 6px;border-radius:3px;flex-shrink:0}
+.srcBadge.db{background:var(--blue-l);color:var(--blue-d)}
+.srcBadge.manual{background:var(--orange-l);color:var(--orange)}
+.manualInput{border:1px solid var(--border);border-radius:4px;padding:2px 6px;
+             width:60px;font-size:13px;font-weight:600;color:var(--text);
+             text-align:center;background:#fffbe6}
+.manualInput:focus{outline:none;border-color:var(--orange)}
+.tgtInput{border:1px dashed var(--border);border-radius:3px;padding:2px 5px;
+           width:50px;font-size:12px;color:var(--text-s);text-align:center;background:transparent}
+.tgtInput:focus{outline:none;border-color:var(--blue)}
+/* 全年目标取库里的下发值时不可改，渲染成实心文本而非虚线输入框 */
+.tgtLocked{display:inline-block;padding:2px 5px;font-size:12px;font-weight:600;
+           color:var(--text);cursor:help;white-space:nowrap}
+/* 下级卷积列：数值 + 与本级目标的差额。差额不用红绿 —— 高于/低于本级目标
+   哪个算问题取决于管理意图，染色会替用户下判断。 */
+.rollSum{font-weight:600;color:var(--text);cursor:help}
+.rollDiff{margin-left:5px;font-size:11px;padding:1px 5px;border-radius:3px;
+          cursor:help;white-space:nowrap}
+.rollDiff.over{color:#0958d9;background:var(--blue-l)}
+.rollDiff.under{color:#874d00;background:#fff7e6}
+.rollNone{color:var(--gray);cursor:help}
+.rollWarn{margin-left:4px;font-size:11px;padding:1px 5px;border-radius:3px;
+          color:var(--red);background:var(--red-l);cursor:help;white-space:nowrap}
+
+/* V-tier */
+.vRow{display:flex;gap:10px;margin:8px 0 4px 130px;flex-wrap:wrap}
+.vCard{border-radius:6px;padding:8px 14px;text-align:center;min-width:76px}
+.vCard .vName{font-size:11px;color:var(--text-s);margin-bottom:2px}
+.vCard .vNum{font-size:20px;font-weight:700}
+.vCard .vPct{font-size:11px;color:var(--text-s)}
+.vCard.v3{background:#e6f4ff}.vCard.v4{background:#f9f0ff}.vCard.v5{background:#fff7e6}
+
+/* Side table */
+.sTable{width:100%;border-collapse:collapse;font-size:13px}
+.sTable th{text-align:left;color:var(--text-s);font-weight:500;padding:8px 12px;
+           border-bottom:1px solid var(--border);font-size:12px;white-space:nowrap}
+.sTable td{padding:9px 12px;border-bottom:1px solid #f0f0f0;vertical-align:middle;white-space:nowrap}
+.sTable tr:last-child td{border-bottom:none}
+.pBar{display:inline-block;background:#f0f0f0;border-radius:3px;
+      height:6px;width:80px;vertical-align:middle}
+.pBarF{height:100%;border-radius:3px;background:var(--blue)}
+.pBarF.warn{background:var(--yellow)}.pBarF.bad{background:var(--red)}
+.pct{font-size:12px;margin-left:4px}
+.pct.good{color:var(--green)}.pct.warn{color:var(--yellow)}.pct.bad{color:var(--red)}
+.tgtCell{display:flex;align-items:center;gap:3px}
+.tgtEditBtn{border:none;background:none;cursor:pointer;color:var(--gray);font-size:11px;padding:1px 3px}
+.tgtEditBtn:hover{color:var(--blue)}
+
+/* Focus */
+.focusItem{border-radius:6px;padding:10px 14px;margin-bottom:8px}
+.focusItem.bad{background:var(--red-l);border:1px solid #ffccc7}
+.focusItem.warn{background:var(--yellow-l);border:1px solid #ffe58f}
+.focusItem.ok{background:var(--green-l);border:1px solid #b7eb8f}
+.fTitle{font-weight:600;font-size:13px;margin-bottom:4px}
+.fDesc{font-size:12px;color:var(--text-s);line-height:1.6}
+.fCopyBtn{margin-top:8px;padding:4px 10px;font-size:12px;background:#fff;
+           border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--blue)}
+/* Focus section label */
+.focusSectionLbl{font-size:12px;color:var(--text-s);font-weight:600;padding-bottom:6px;
+                 border-bottom:1px solid var(--border);margin-bottom:8px;letter-spacing:.5px}
+/* Todo list */
+.todoItem{display:flex;align-items:center;gap:8px;padding:6px 2px;
+          border-bottom:1px solid #f5f5f5}
+.todoItem:last-child{border-bottom:none}
+.todoChk{width:15px;height:15px;cursor:pointer;accent-color:var(--blue);flex-shrink:0}
+.todoInput{flex:1;border:none;border-bottom:1px solid transparent;background:transparent;
+           font-size:13px;padding:2px 4px;min-width:0;color:var(--text)}
+.todoInput:focus{outline:none;border-bottom-color:var(--blue)}
+.todoItem.done .todoInput{text-decoration:line-through;color:var(--gray)}
+.todoDel{border:none;background:none;color:var(--gray);cursor:pointer;
+         font-size:13px;padding:1px 4px;flex-shrink:0;line-height:1}
+.todoDel:hover{color:var(--red)}
+.todoAddBtn{display:block;width:100%;margin-top:10px;padding:7px;font-size:13px;
+            color:var(--blue);background:var(--blue-l);border:1px dashed var(--blue);
+            border-radius:6px;cursor:pointer;text-align:center}
+.todoAddBtn:hover{background:var(--blue);color:#fff}
+
+/* ── 待办侧边栏 ────────────────────────────────────────────────────────────────
+   三态，状态存 localStorage('todo_dock')，跨地区/周期共用（是使用习惯，不是数据）：
+     locked  锁定 —— 定宽占位，body 右侧留出等宽 padding，左侧内容被真正挤窄
+     float   浮动 —— 悬浮在内容之上，左侧内容不动（临时看一眼用）
+     hidden  收起 —— 只在右缘留一枚竖排小标签
+   锁定态用 body{padding-right} 而不是给 .main 套 grid：header/geo-nav 是 sticky 且
+   通栏，套 grid 会让它们跟着缩、和内容错位；改 body padding 则整页（含通栏条）
+   一起让位，视觉上就是"画布变窄"。.main 是 max-width:1320 + 百分比收敛，可用宽度
+   被压到 1320 以下时左侧各卡片按原比例一起变窄，不必另设断点。
+   ⚠️ 屏幕特别宽时（可用宽度减掉侧栏仍 >1320px）只会重新居中、不再变窄 —— 那种
+   情况下本来就不缺地方，没必要为了"看起来变窄"而人为砍掉画布。 */
+.todoDock{position:fixed;top:0;right:0;bottom:0;width:var(--dock-w);z-index:120;
+          background:#fff;border-left:1px solid var(--border);
+          box-shadow:-4px 0 16px rgba(0,0,0,.08);
+          display:flex;flex-direction:column;transition:transform .25s ease}
+.todoDock.hidden{transform:translateX(100%)}
+/* 浮动态阴影更重一点，强调它压在内容上面 */
+.todoDock.float{box-shadow:-6px 0 24px rgba(0,0,0,.16)}
+body.dockLocked{padding-right:var(--dock-w)}
+.dockHdr{display:flex;align-items:center;gap:6px;padding:12px 14px;
+         border-bottom:1px solid var(--border);background:#fafafa;flex-shrink:0}
+.dockTitle{font-size:14px;font-weight:600;flex:1;white-space:nowrap}
+.dockCnt{font-size:11px;color:var(--gray);background:var(--gray-l);
+         border-radius:10px;padding:1px 7px;flex-shrink:0}
+.dockBtn{border:1px solid var(--border);background:#fff;border-radius:5px;
+         cursor:pointer;font-size:13px;line-height:1;padding:4px 6px;color:var(--text-s);
+         flex-shrink:0}
+.dockBtn:hover{border-color:var(--blue);color:var(--blue)}
+.dockBtn.on{background:var(--blue-l);border-color:var(--blue);color:var(--blue)}
+.dockScope{padding:6px 14px;font-size:11px;color:var(--gray);
+           border-bottom:1px solid var(--border);background:#fff;flex-shrink:0}
+.dockBody{flex:1;overflow-y:auto;padding:12px 14px}
+/* 收起后的拉手：竖排文字贴在右缘 */
+.dockTab{position:fixed;right:0;top:120px;z-index:119;
+         writing-mode:vertical-rl;padding:12px 7px;cursor:pointer;
+         background:var(--blue);color:#fff;border:none;font-size:13px;
+         border-radius:6px 0 0 6px;box-shadow:-2px 0 8px rgba(0,0,0,.15);
+         letter-spacing:2px;font-family:inherit}
+.dockTab.gone{display:none}
+/* 窄屏放不下定宽侧栏，锁定态退化为浮动（不再挤压内容） */
+@media(max-width:1100px){
+  body.dockLocked{padding-right:0}
+}
+/* Funnel + Factor 2-column layout */
+/* 列宽与 .bottomRow 严格一致（1fr / 380px / gap 20），这样漏斗卡片与下面的
+   「完成情况」左右对齐、关键因素与「本周重点」左右对齐。改一个必须改另一个。 */
+.funnelLayout{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:20px;align-items:start}
+@media(max-width:900px){.funnelLayout{grid-template-columns:1fr}}
+/* Factor panel */
+.fpEmpty{text-align:center;padding:48px 20px;color:var(--gray)}
+.fpEmpty .fpIcon{font-size:40px;margin-bottom:12px}
+.fpSectionLbl{font-size:12px;color:var(--text-s);font-weight:500;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.fpItem{display:flex;align-items:center;gap:6px;padding:7px 0;border-top:1px solid #f5f5f5}
+.fpItem:first-child{border-top:none}
+.fpChk{width:15px;height:15px;cursor:pointer;accent-color:var(--blue);flex-shrink:0}
+.fpDot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.fpDot.good{background:var(--green)}.fpDot.warn{background:var(--yellow)}.fpDot.bad{background:var(--red)}.fpDot.gray{background:var(--gray)}
+.fpName{flex:1;font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fpVal{font-weight:600;font-size:13px;min-width:40px;text-align:right;flex-shrink:0}
+.fpManual{border:1px solid var(--border);border-radius:4px;padding:2px 5px;width:52px;font-size:13px;font-weight:600;text-align:center;background:#fffbe6;flex-shrink:0}
+.fpManual:focus{outline:none;border-color:var(--orange)}
+.fpTgt{border:1px dashed var(--border);border-radius:3px;padding:2px 5px;width:46px;font-size:12px;text-align:center;background:transparent;flex-shrink:0}
+.fpTgt:focus{outline:none;border-color:var(--blue)}
+.fpUnit{font-size:11px;color:var(--gray);flex-shrink:0;min-width:14px}
+.fpSrc{font-size:11px;padding:1px 5px;border-radius:3px;flex-shrink:0}
+.fpSrc.db{background:var(--blue-l);color:var(--blue-d)}.fpSrc.manual{background:var(--orange-l);color:var(--orange)}
+.fpDel{border:none;background:none;color:var(--gray);cursor:pointer;font-size:12px;padding:1px 3px}
+.fpDel:hover{color:var(--red)}
+.fpAddBtn{display:block;width:100%;margin-top:12px;padding:7px;font-size:13px;color:var(--blue);background:var(--blue-l);border:1px dashed var(--blue);border-radius:6px;cursor:pointer;text-align:center}
+.fpAddBtn:hover{background:var(--blue);color:#fff}
+.fpLibBtn{display:block;width:100%;margin-top:8px;padding:6px;font-size:12px;color:var(--gray);background:var(--gray-l);border:1px solid var(--border);border-radius:6px;cursor:not-allowed;text-align:center}
+.aWrap.sel .aBadgeRow{background:var(--blue-l);border-radius:6px;padding:4px 8px;margin:-4px -8px}
+.aWrap.sel .aToggle{background:var(--blue);color:#fff}
+</style>
+</head>
+<body>
+<header class="hdr">
+  <div class="hdrTop">
+    <h1>🔻 服务商转化漏斗</h1>
+    <div class="sp"></div>
+    <span id="whoami" class="saveStatus" style="display:none"></span>
+    <span id="saveStatus" class="saveStatus offline">💾 本地模式</span>
+    <span class="badge" id="dataBadge">📦 演示数据</span>
+  </div>
+  <div id="periodBar" class="hdrPeriod"></div>
+</header>
+<nav class="geo-nav" id="geoNav"></nav>
+<div class="main">
+  <div class="funnelLayout">
+    <div class="card">
+      <div class="cHdr">
+        <span class="cTitle" id="funnelTitle">浙江省 · 全省汇总</span>
+        <span class="cSub" id="funnelSub"></span>
+      </div>
+      <div class="fWrap" id="funnelWrap"></div>
+    </div>
+    <div class="card" id="factorPanel"></div>
+  </div>
+  <div class="bottomRow">
+    <div class="card">
+      <div class="cHdr"><span class="cTitle">📊 完成情况</span>
+        <span class="cSub">点击目标数字可编辑</span></div>
+      <div style="padding:14px 16px;overflow-x:auto" id="sideWrap"></div>
+    </div>
+    <div class="card">
+      <div class="cHdr"><span class="cTitle">🚨 本周重点</span></div>
+      <div style="padding:14px 16px" id="focusWrap"></div>
+    </div>
+  </div>
+</div>
+<!-- 待办侧边栏：从「本周重点」里抽出来独立成栏。待办是每天要盯的东西，
+     埋在页面底部右下角容易被漏掉。 -->
+<aside class="todoDock hidden" id="todoDock">
+  <div class="dockHdr">
+    <span class="dockTitle">📝 待办项</span>
+    <span class="dockCnt" id="dockCnt"></span>
+    <button class="dockBtn" id="dockLockBtn" onclick="toggleDockLock()"></button>
+    <button class="dockBtn" onclick="setDockMode('hidden')" title="收起">✕</button>
+  </div>
+  <div class="dockScope" id="dockScope"></div>
+  <div class="dockBody" id="dockBody"></div>
+</aside>
+<button class="dockTab" id="dockTab" onclick="reopenDock()">📝 待办</button>
+<script>
+// ── Mock data helpers ──────────────────────────────────────────────────────────
+// source: 'db' = 系统可取  |  'manual' = 需手填
+// ⚠️ target 参数**被有意丢弃**（金总 2026-08-01 定）：因子目标一律不预设，只认
+// 用户手填的值（见 getFactorTarget）。留着形参是为了不动下面十几处 mkF 调用的
+// 写法，值不再进对象 —— 否则演示目标会从这里漏回面板。
+function F(label,val,target,unit,source){
+  return {label,val,unit,source:source||'db'}
+}
+function mkF(visit,fo,meet,pa,p61,ret,intentVisit){
+  return {
+    // 总量→授权 是渗透率那一跳，原 p2i(池→意向)/i2a(意向→授权) 两跳已合并
+    p2a: { visit: F('跑动数量',visit[0],visit[1],'次','db'),
+           iVisit: F('潜客跑动数量',intentVisit[0],intentVisit[1],'次','db') },
+    // 授权 → V1+（首次开单）：抓手是首单礼，所以首单礼因子挂在这一跳，
+    // 不再挂 a2t。这一跳的因子还没接生产取数（首单礼券种库里也还没有）。
+    a2v1: {
+      fo:     F('首单礼红包券使用率',fo[0],fo[1],'%','db'),
+    },
+    a2t: {
+      // 跑动分三档：合计 / 大华 / 代理商。两类打卡人数据源不同（大华走 SMB 拜访
+      // 明细、代理商走拜访活动明细），口径必须分开看，也各自设目标。
+      visit:  F('跑动次数（合计）',visit[2],visit[3],'次','db'),
+      visitD: F('跑动次数（大华）',null,null,'次','db'),
+      visitA: F('跑动次数（代理商）',null,null,'次','db'),
+      meet:   F('业务员红包券使用率',meet[0],meet[1],'%','db'),
+      pa:     F('推广会参会率',pa[0],pa[1],'%','db'),
+      p61:    F('推广会6+1红包使用率',p61[0],p61[1],'%','manual'),
+    },
+    t2v: { ret: F('回归礼红包使用率',ret[0],ret[1],'%','db') },
+  }
+}
+
+const GEO = { '浙江省': {
+  _: {
+    ytd:  {pool:2400,intent:980,authorized:620,activated:445,v3:168,v4:67,v5:22},
+    period:{'2026-W31':{intent:28,authorized:18,activated:14,v3:5,v4:2,v5:1},
+            '2026-07': {intent:112,authorized:71,activated:51,v3:19,v4:7,v5:2}},
+    ytdT: {intent:1100,authorized:700,activated:500,v3:200,v4:80,v5:30},
+    periodT:{'2026-W31':{intent:32,authorized:22,activated:16,v3:6,v4:2,v5:1},
+             '2026-07': {intent:125,authorized:80,activated:58,v3:22,v4:8,v5:3}},
+    ytdF: mkF([892,1000,412,500],[65,75],[72,80],[48,60],[35,50],[43,60],[523,600]),
+    periodF:{'2026-W31': mkF([42,50,19,24],[68,75],[74,80],[52,60],[37,50],[45,60],[26,30]),
+             '2026-07':  mkF([175,200,78,95],[66,75],[73,80],[50,60],[36,50],[44,60],[105,120])},
+  },
+  '杭州': {
+    _: { ytd:{pool:380,intent:162,authorized:105,activated:78,v3:30,v4:12,v5:4},
+         period:{'2026-W31':{intent:5,authorized:3,activated:2,v3:1,v4:0,v5:0},
+                 '2026-07': {intent:19,authorized:12,activated:9,v3:3,v4:1,v5:0}},
+         ytdT:{intent:180,authorized:120,activated:90,v3:35,v4:14,v5:5},
+         periodT:{'2026-W31':{intent:6,authorized:4,activated:3,v3:1,v4:1,v5:0},
+                  '2026-07': {intent:22,authorized:14,activated:10,v3:4,v4:1,v5:1}},
+         ytdF: mkF([145,160,72,85],[68,75],[75,80],[52,60],[38,50],[45,60],[88,100]),
+         periodF:{'2026-W31': mkF([7,8,3,4],[70,75],[76,80],[54,60],[39,50],[46,60],[4,5]),
+                  '2026-07':  mkF([28,32,14,16],[67,75],[74,80],[51,60],[37,50],[44,60],[17,20])},
+    },
+    '西湖区': {ytd:{pool:60,intent:24,authorized:15,activated:11,v3:4,v4:2,v5:1},
+      period:{'2026-W31':{intent:1,authorized:1,activated:0,v3:0,v4:0,v5:0},'2026-07':{intent:3,authorized:2,activated:1,v3:1,v4:0,v5:0}},
+      ytdT:{intent:28,authorized:18,activated:13,v3:5,v4:2,v5:1},periodT:{'2026-W31':{intent:1,authorized:1,activated:1,v3:0,v4:0,v5:0},'2026-07':{intent:4,authorized:2,activated:2,v3:1,v4:0,v5:0}},
+      ytdF:mkF([22,25,11,14],[70,75],[78,80],[55,60],[40,50],[48,60],[14,16]),
+      periodF:{'2026-W31':mkF([1,2,1,1],[71,75],[79,80],[56,60],[41,50],[49,60],[1,2]),'2026-07':mkF([5,6,3,4],[70,75],[77,80],[54,60],[40,50],[47,60],[3,4])},
+    },
+    '余杭区': {ytd:{pool:80,intent:35,authorized:23,activated:17,v3:6,v4:2,v5:1},
+      period:{'2026-W31':{intent:1,authorized:1,activated:1,v3:0,v4:0,v5:0},'2026-07':{intent:4,authorized:3,activated:2,v3:1,v4:0,v5:0}},
+      ytdT:{intent:38,authorized:26,activated:20,v3:7,v4:3,v5:1},periodT:{'2026-W31':{intent:2,authorized:1,activated:1,v3:0,v4:0,v5:0},'2026-07':{intent:5,authorized:3,activated:2,v3:1,v4:1,v5:0}},
+      ytdF:mkF([30,35,15,18],[66,75],[73,80],[50,60],[36,50],[44,60],[19,22]),
+      periodF:{'2026-W31':mkF([1,2,1,1],[67,75],[74,80],[51,60],[37,50],[45,60],[1,1]),'2026-07':mkF([6,7,3,4],[65,75],[72,80],[50,60],[35,50],[43,60],[4,5])},
+    },
+    '滨江区': {ytd:{pool:45,intent:18,authorized:12,activated:9,v3:3,v4:1,v5:0},
+      period:{'2026-W31':{intent:1,authorized:0,activated:0,v3:0,v4:0,v5:0},'2026-07':{intent:2,authorized:2,activated:1,v3:1,v4:0,v5:0}},
+      ytdT:{intent:20,authorized:14,activated:10,v3:4,v4:2,v5:1},periodT:{'2026-W31':{intent:1,authorized:1,activated:0,v3:0,v4:0,v5:0},'2026-07':{intent:3,authorized:2,activated:1,v3:1,v4:0,v5:0}},
+      ytdF:mkF([16,18,8,10],[62,75],[70,80],[45,60],[32,50],[40,60],[10,12]),
+      periodF:{'2026-W31':mkF([1,1,0,1],[63,75],[71,80],[46,60],[33,50],[41,60],[1,1]),'2026-07':mkF([3,4,2,2],[62,75],[70,80],[44,60],[31,50],[39,60],[2,3])},
+    },
+  },
+  '宁波': {
+    _: { ytd:{pool:340,intent:138,authorized:89,activated:63,v3:24,v4:9,v5:3},
+         period:{'2026-W31':{intent:4,authorized:3,activated:2,v3:1,v4:0,v5:0},'2026-07':{intent:16,authorized:10,activated:7,v3:3,v4:1,v5:0}},
+         ytdT:{intent:155,authorized:100,activated:72,v3:28,v4:11,v5:4},
+         periodT:{'2026-W31':{intent:5,authorized:3,activated:2,v3:1,v4:0,v5:0},'2026-07':{intent:18,authorized:11,activated:8,v3:3,v4:1,v5:1}},
+         ytdF:mkF([125,140,60,72],[63,75],[70,80],[45,60],[33,50],[41,60],[75,88]),
+         periodF:{'2026-W31':mkF([6,7,3,4],[64,75],[71,80],[46,60],[34,50],[42,60],[4,5]),'2026-07':mkF([24,28,12,14],[63,75],[70,80],[45,60],[33,50],[41,60],[15,18])},
+    },
+    '海曙区': {ytd:{pool:70,intent:27,authorized:17,activated:12,v3:5,v4:2,v5:1},
+      period:{'2026-W31':{intent:1,authorized:1,activated:0,v3:0,v4:0,v5:0},'2026-07':{intent:3,authorized:2,activated:1,v3:1,v4:0,v5:0}},
+      ytdT:{intent:30,authorized:19,activated:14,v3:5,v4:2,v5:1},periodT:{'2026-W31':{intent:1,authorized:1,activated:1,v3:0,v4:0,v5:0},'2026-07':{intent:4,authorized:2,activated:2,v3:1,v4:0,v5:0}},
+      ytdF:mkF([24,27,11,13],[64,75],[71,80],[46,60],[34,50],[42,60],[14,16]),
+      periodF:{'2026-W31':mkF([1,1,1,1],[65,75],[72,80],[47,60],[35,50],[43,60],[1,1]),'2026-07':mkF([5,5,2,3],[64,75],[71,80],[46,60],[33,50],[41,60],[3,3])},
+    },
+    '鄞州区': {ytd:{pool:85,intent:34,authorized:22,activated:16,v3:6,v4:2,v5:1},
+      period:{'2026-W31':{intent:1,authorized:1,activated:1,v3:0,v4:0,v5:0},'2026-07':{intent:4,authorized:3,activated:2,v3:1,v4:1,v5:0}},
+      ytdT:{intent:38,authorized:25,activated:18,v3:7,v4:3,v5:1},periodT:{'2026-W31':{intent:2,authorized:1,activated:1,v3:1,v4:0,v5:0},'2026-07':{intent:5,authorized:3,activated:2,v3:2,v4:1,v5:0}},
+      ytdF:mkF([30,34,14,17],[62,75],[69,80],[44,60],[32,50],[40,60],[18,21]),
+      periodF:{'2026-W31':mkF([1,2,1,1],[63,75],[70,80],[45,60],[32,50],[40,60],[1,1]),'2026-07':mkF([6,7,3,4],[62,75],[69,80],[44,60],[31,50],[39,60],[4,5])},
+    },
+  },
+  '绍兴': {
+    _: { ytd:{pool:260,intent:108,authorized:70,activated:50,v3:19,v4:7,v5:2},
+         period:{'2026-W31':{intent:3,authorized:2,activated:1,v3:1,v4:0,v5:0},'2026-07':{intent:13,authorized:8,activated:6,v3:2,v4:1,v5:0}},
+         ytdT:{intent:120,authorized:80,activated:58,v3:22,v4:8,v5:3},
+         periodT:{'2026-W31':{intent:4,authorized:2,activated:2,v3:1,v4:0,v5:0},'2026-07':{intent:14,authorized:9,activated:7,v3:2,v4:1,v5:0}},
+         ytdF:mkF([97,110,45,55],[64,75],[71,80],[47,60],[34,50],[42,60],[58,68]),
+         periodF:{'2026-W31':mkF([5,6,2,3],[65,75],[72,80],[48,60],[35,50],[43,60],[3,4]),'2026-07':mkF([19,22,9,11],[64,75],[71,80],[47,60],[34,50],[42,60],[12,14])},
+    },
+    '越城区': {ytd:{pool:80,intent:33,authorized:21,activated:15,v3:6,v4:2,v5:1},
+      period:{'2026-W31':{intent:1,authorized:1,activated:0,v3:0,v4:0,v5:0},'2026-07':{intent:4,authorized:2,activated:2,v3:1,v4:0,v5:0}},
+      ytdT:{intent:36,authorized:24,activated:17,v3:7,v4:3,v5:1},periodT:{'2026-W31':{intent:1,authorized:1,activated:1,v3:0,v4:0,v5:0},'2026-07':{intent:4,authorized:3,activated:2,v3:1,v4:0,v5:0}},
+      ytdF:mkF([29,32,13,16],[65,75],[72,80],[48,60],[35,50],[43,60],[17,20]),
+      periodF:{'2026-W31':mkF([1,2,1,1],[66,75],[73,80],[49,60],[36,50],[44,60],[1,1]),'2026-07':mkF([5,6,3,3],[65,75],[72,80],[47,60],[35,50],[43,60],[3,4])},
+    },
+  },
+  '嘉兴': {
+    _: { ytd:{pool:240,intent:94,authorized:59,activated:41,v3:15,v4:6,v5:2},
+         period:{'2026-W31':{intent:2,authorized:1,activated:1,v3:0,v4:0,v5:0},'2026-07':{intent:11,authorized:7,activated:5,v3:2,v4:1,v5:0}},
+         ytdT:{intent:106,authorized:68,activated:48,v3:18,v4:7,v5:2},
+         periodT:{'2026-W31':{intent:3,authorized:2,activated:1,v3:1,v4:0,v5:0},'2026-07':{intent:12,authorized:8,activated:6,v3:2,v4:1,v5:0}},
+         ytdF:mkF([84,96,39,48],[62,75],[69,80],[44,60],[32,50],[40,60],[50,60]),
+         periodF:{'2026-W31':mkF([4,5,2,2],[63,75],[70,80],[45,60],[32,50],[40,60],[2,3]),'2026-07':mkF([16,19,8,10],[62,75],[69,80],[44,60],[31,50],[39,60],[10,12])},
+    },
+    '南湖区': {ytd:{pool:70,intent:27,authorized:17,activated:12,v3:4,v4:2,v5:1},
+      period:{'2026-W31':{intent:1,authorized:0,activated:0,v3:0,v4:0,v5:0},'2026-07':{intent:3,authorized:2,activated:1,v3:1,v4:0,v5:0}},
+      ytdT:{intent:30,authorized:19,activated:14,v3:5,v4:2,v5:1},periodT:{'2026-W31':{intent:1,authorized:1,activated:0,v3:0,v4:0,v5:0},'2026-07':{intent:3,authorized:2,activated:2,v3:1,v4:0,v5:0}},
+      ytdF:mkF([24,27,11,13],[63,75],[70,80],[45,60],[33,50],[41,60],[14,16]),
+      periodF:{'2026-W31':mkF([1,1,1,1],[64,75],[71,80],[46,60],[33,50],[41,60],[1,1]),'2026-07':mkF([5,5,2,3],[63,75],[70,80],[44,60],[32,50],[40,60],[2,3])},
+    },
+  },
+}};
+
+// ── State + localStorage ───────────────────────────────────────────────────────
+const S = {
+  province:'浙江省', city:null, district:null,
+  cert:'all',         // 'all' | 'cert' | 'nocert' —— 认证维度筛选，只影响结果值与转化率
+  periodType:'week',  // 'week' | 'month'
+  periodKey:null,     // ISO week '2026-W31' or month '2026-07'; set on init
+  selectedArrow: null
+};
+
+const ARROW_NAMES = {
+  p2a: '城市总量 → 授权签约（渗透率）',
+  // 2026-08-01 拆出 V1 一阶：授权→V1 是「签约后首次开单」，V1→V2 才是「激活」，
+  // 两跳抓手不同（首单礼 vs 激活台数解锁的转化红包），合成一跳看不出卡在哪。
+  a2v1:'授权 → 已开单（V1+）',
+  a2t: '已开单 → 已激活（V2+）',
+  t2v: '激活 → 高级服务商（V3+）',
+};
+
+// ── ISO week utilities ─────────────────────────────────────────────────────────
+// Returns the ISO year AND week. The ISO year can differ from the calendar year
+// around New Year: 2027-01-01 is 2026-W53, not 2027-W53 (which doesn't exist).
+function isoWeekOf(date){
+  const d = new Date(date); d.setHours(0,0,0,0);
+  d.setDate(d.getDate() + 3 - (d.getDay()+6)%7);   // → Thursday of this ISO week
+  const year = d.getFullYear();                     // Thursday's year = ISO year
+  const w1 = new Date(year,0,4);                    // Jan 4 is always in week 1
+  w1.setDate(w1.getDate() + 3 - (w1.getDay()+6)%7); // → Thursday of week 1
+  return { year, week: 1 + Math.round((d-w1)/(7*86400000)) };
+}
+function isoWeekRange(year, week){
+  const w1 = new Date(year,0,4);
+  w1.setDate(w1.getDate() - (w1.getDay()+6)%7);     // → Monday of week 1
+  const start = new Date(w1.getFullYear(),w1.getMonth(),w1.getDate()+(week-1)*7);
+  const end   = new Date(start.getFullYear(),start.getMonth(),start.getDate()+6);
+  const fmt = d => `${d.getMonth()+1}月${d.getDate()}日`;
+  return { label:`${fmt(start)}–${fmt(end)}`, start, end };
+}
+function weekKey(year, week){ return `${year}-W${String(week).padStart(2,'0')}`; }
+
+// 某 ISO 年有 52 还是 53 周。12月28日永远落在该年最后一个 ISO 周 —— 这是判断
+// 53 周年份的标准做法，比"1月1日是周四"那套条件判断更不容易写错。
+// 必须准确：后端 period_range() 对 2026-W54 这类非法周直接返回 422。
+function weeksInIsoYear(year){ return isoWeekOf(new Date(year,11,28)).week; }
+
+// 年份可选范围：往前 2 年（看历史）+ 往后 3 年（提前定目标）。
+// 目标是人定的、可以先填未来周期，所以未来年份必须可选。
+const YEAR_BACK = 2, YEAR_FWD = 3;
+function yearOptions(){
+  const y0 = new Date().getFullYear(), out = [];
+  for(let y = y0 - YEAR_BACK; y <= y0 + YEAR_FWD; y++) out.push(y);
+  return out;
+}
+
+// 全年所有周（1~52/53），不再只给最近 16 周
+function allWeeks(year){
+  const n = weeksInIsoYear(year), out = [];
+  for(let w = 1; w <= n; w++){
+    out.push({key: weekKey(year, w),
+              label: `W${String(w).padStart(2,'0')} · ${isoWeekRange(year, w).label}`});
+  }
+  return out;
+}
+// 全年 12 个月
+function allMonths(year){
+  const out = [];
+  for(let m = 1; m <= 12; m++){
+    out.push({key: `${year}-${String(m).padStart(2,'0')}`, label: `${m}月`});
+  }
+  return out;
+}
+function periodOptions(type, year){
+  return type === 'week' ? allWeeks(year) : allMonths(year);
+}
+
+// 当前选中周期属于哪一年。周模式取 ISO 年（跨年周归属可能与日历年不同）。
+function selectedYear(){
+  const m = S.periodKey.match(/^(\d{4})/);
+  return m ? +m[1] : new Date().getFullYear();
+}
+
+// Default to the ISO week containing today
+function currentWeekKey(){ const {year,week}=isoWeekOf(new Date()); return weekKey(year,week); }
+function currentMonthKey(){
+  const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+if(!S.periodKey) S.periodKey = currentWeekKey();
+
+function periodKey(){ return S.periodKey; }
+function periodLabel(){
+  if(S.periodType==='week'){
+    const m = S.periodKey.match(/(\d{4})-W(\d+)/);
+    if(m){ const r=isoWeekRange(+m[1],+m[2]); return `W${m[2]} · ${r.label}`; }
+  }
+  if(S.periodType==='month'){
+    const [y,mo]=S.periodKey.split('-'); return `${y}年${+mo}月`;
+  }
+  return S.periodKey;
+}
+function geoKey(){ return [S.province,S.city||'',S.district||''].join('/'); }
+
+// ─ Override storage (targets + manual factor values)
+function lsGet(key){ try{return JSON.parse(localStorage.getItem('funnel_v2_'+key))}catch{return null} }
+function lsSet(key,val){ localStorage.setItem('funnel_v2_'+key, JSON.stringify(val)) }
+
+// ─ Factor active state (per geo+period+conv+factor key; default true)
+function factorActiveKey(convKey,factorKey){ return `${geoKey()}/${periodKey()}/${convKey}/${factorKey}`; }
+function getFactorActive(convKey,factorKey){
+  const m = lsGet('factor_active')||{};
+  const v = m[factorActiveKey(convKey,factorKey)];
+  return v === undefined ? true : v;
+}
+function setFactorActive(convKey,factorKey,active){
+  const m = lsGet('factor_active')||{};
+  m[factorActiveKey(convKey,factorKey)] = active;
+  lsSet('factor_active',m); scheduleSave();
+}
+
+// ─ Custom factors (per geo+period+conv)
+function customKey(convKey){ return `${geoKey()}/${periodKey()}/${convKey}`; }
+function getCustomFactors(convKey){ return (lsGet('custom_factors')||{})[customKey(convKey)]||[]; }
+function setCustomFactors(convKey,list){
+  const m = lsGet('custom_factors')||{};
+  m[customKey(convKey)] = list; lsSet('custom_factors',m); scheduleSave();
+}
+
+// 目标口径（金总 2026-08-01 定）：
+//   全年目标 —— 取库里的下发值（provider_target），**只读不可改**；库里没有该
+//               地区/该档的下发值时留空（区县级无下发目标，不摊派）。
+//   本期目标 —— 预设 = 全年目标 × 当月节奏占比（kpi_rhythm），周再 ÷ 当月周数；
+//               预设值用户可以改，改过就以用户的为准。
+// 演示目标（ytdT/periodT）不再作为回落 —— 那是原型阶段拍的数，摆在「下发目标」
+// 的位置上会被当成真目标看。库里没有就空着。
+function getTarget(level, isPeriod){
+  const gk = geoKey(); const pk = periodKey();
+  const overrides = lsGet('targets') || {};
+  if(isPeriod){
+    // 本期目标：用户改过用用户的，否则用节奏分解出的预设值
+    const stored = overrides[gk]?.[pk]?.[level];
+    if(stored!=null) return stored;
+    return TARGETS?.period?.[level] ?? null;
+  }
+  // 全年目标：库里有下发值就只认库里的；取不到时才允许用户手填
+  const dbv = TARGETS?.ytd?.[level];
+  if(dbv!=null) return dbv;
+  return overrides[gk]?.ytd?.[level] ?? null;
+}
+// 全年目标是否锁死：库里给了该档的下发值就不可改。区县级/无下发值时开放手填。
+function ytdLocked(level){
+  return !!TARGETS && TARGETS.editable===false && TARGETS.ytd?.[level]!=null;
+}
+// val 为 null 表示删除该目标（清空输入框），让它回落到预设值
+function setTarget(level, isPeriod, val){
+  const gk = geoKey(); const pk = periodKey();
+  const overrides = lsGet('targets') || {};
+  if(!overrides[gk]) overrides[gk] = {};
+  const bucket = isPeriod
+    ? (overrides[gk][pk] = overrides[gk][pk] || {})
+    : (overrides[gk].ytd = overrides[gk].ytd || {});
+  if(val===null) delete bucket[level]; else bucket[level] = val;
+  lsSet('targets', overrides);
+}
+function getManualFactor(factorKey, convKey){
+  const gk = geoKey(); const pk = periodKey();
+  const m = lsGet('manual') || {};
+  return m[gk]?.[pk]?.[convKey]?.[factorKey] ?? null;
+}
+function setManualFactor(factorKey, convKey, val){
+  const gk = geoKey(); const pk = periodKey();
+  const m = lsGet('manual') || {};
+  if(!m[gk]) m[gk]={};
+  if(!m[gk][pk]) m[gk][pk]={};
+  if(!m[gk][pk][convKey]) m[gk][pk][convKey]={};
+  m[gk][pk][convKey][factorKey]=val;
+  lsSet('manual', m);
+}
+
+// 生产库返回的漏斗数（/api/funnel/data），按 geo+period 缓存一份。
+// 为 null 表示取不到（本地开发/库不可用），此时回落内置演示数据。
+let PROD = null;
+
+function demoData(){
+  const prov = GEO[S.province] || GEO['浙江省'] || {};
+  if(S.district && S.city && prov[S.city]?.[S.district]) return prov[S.city][S.district];
+  if(S.city && prov[S.city]) return prov[S.city]._;
+  return prov._ || {};
+}
+
+// 演示数据是老形状(intent + v3/v4/v5)，这里补出漏斗要的 senior 和 activated_v1，
+// 让 renderFunnel 只认一种形状，不用到处判空。
+// activated_v1 演示值取 authorized 与 activated 的中点 —— 纯占位，只为让演示态的
+// 柱子有个合理高度；连上生产库后走真实的 服务商等级 ≥ v1 计数。
+function withSenior(o){
+  if(!o) return {};
+  const out = {...o};
+  if(out.senior==null){
+    out.senior = (o.v3??null)!=null || (o.v4??null)!=null || (o.v5??null)!=null
+      ? (o.v3||0)+(o.v4||0)+(o.v5||0) : null;
+  }
+  if(out.activated_v1==null && o.authorized!=null && o.activated!=null){
+    out.activated_v1 = Math.round((o.authorized + o.activated)/2);
+  }
+  return out;
+}
+
+// 真实数据只覆盖漏斗绝对值(ytd/period/penetration/aside)。
+// 注：演示目标 ytdT/periodT 现已是**死数据**，getTarget 不再读它们 —— 全年目标走
+// TARGETS（provider_target 下发值），本期目标走节奏分解的预设值。留着这些字段只是
+// 没去动那十几处演示地区的字面量。
+function currentData(){
+  const demo = demoData();
+  const pk = periodKey();
+  if(!PROD){
+    const dPeriod = {};
+    Object.keys(demo.period||{}).forEach(k=>dPeriod[k]=withSenior(demo.period[k]));
+    const dy = withSenior(demo.ytd);
+    return {
+      ...demo, ytd: dy, period: dPeriod,
+      penetration: (dy.pool>0 && dy.authorized!=null)
+        ? Math.round(dy.authorized/dy.pool*1000)/10 : null,
+      aside: { intent: demo.ytd?.intent ?? null },
+    };
+  }
+  return {
+    ...demo,
+    ytd: withSenior(PROD.ytd),
+    period: { ...(demo.period||{}), [pk]: withSenior(PROD.period) },
+    penetration: PROD.penetration,
+    aside: PROD.aside || {},
+    tiers: PROD.tiers,
+  };
+}
+
+async function loadProdData(){
+  if(!apiAvailable){ PROD=null; return; }
+  try{
+    const r = await apiGet(`/data${dataQS()}`);
+    PROD = (r.source==='prod' && r.data) ? r.data : null;
+    setDataBadge(r);
+  }catch(e){ PROD=null; }
+}
+
+// ── 关键因素真实值（/api/funnel/factor-values）──────────────────────────────────
+// FACTORS[factor_id] = {value, num, den, pending, expired} | null
+// null = 该地区该周期无样本（如一张券都没发），显示「—」而不是 0%。
+// 因子按 geo+period 算，不随认证维度变（券的发放对象不分认证与否）。
+let FACTORS = {}, FACTOR_DETAIL = {};
+
+async function loadFactorValues(){
+  if(!apiAvailable){ FACTORS={}; FACTOR_DETAIL={}; return; }
+  try{
+    const r = await apiGet(`/factor-values${scopeQS()}&refresh=true`);
+    FACTORS = r.values || {};
+    FACTOR_DETAIL = r.details || {};
+  }catch(e){ FACTORS={}; FACTOR_DETAIL={}; }
+}
+
+// ── 下发目标（/api/funnel/targets）─────────────────────────────────────────────
+// TARGETS = {ytd:{authorized,activated,senior}, period:{...}, editable:false,
+//            rhythm, week_share, notes:[...]} | null
+// ytd 是库里年初下发的全年目标（只读）；period 是「全年 × 当月节奏占比」分解出的
+// 本期预设值（周再 ÷ 当月周数）。为 null 表示取不到 —— 此时全部留空由用户手填，
+// 不拿演示值顶上去。
+let TARGETS = null;
+
+async function loadTargets(){
+  if(!apiAvailable){ TARGETS=null; return; }
+  try{
+    const r = await apiGet(`/targets${scopeQS()}`);
+    TARGETS = r.targets || null;
+  }catch(e){ TARGETS=null; }
+}
+
+// 下级卷积目标：省看 11 地市之和，市看区县之和，区县无下级。
+// 单独一个请求而不是塞进 /targets：卷积要遍历全部下级、逐个算预设值，比本级取数
+// 重得多；合在一起会让每次切地区都等这一份。慢的那个单独走，到了再重画。
+let ROLLUP = null;
+async function loadRollup(){
+  if(!apiAvailable){ ROLLUP=null; return; }
+  try{
+    const r = await apiGet(`/target-rollup${scopeQS()}`);
+    ROLLUP = r.available ? r : null;
+  }catch(e){ ROLLUP=null; }
+}
+
+// 真实值覆盖演示值：库里算得出就用库的，算不出（无样本/未接入）保留演示形状但
+// 把 val 置 null，由 renderFactorPanel 显示「—」并给出原因。
+function factorReal(factorKey){
+  if(!(factorKey in FACTORS)) return undefined;   // 该因子未接入取数
+  return { value: FACTORS[factorKey], detail: FACTOR_DETAIL[factorKey] };
+}
+
+function setDataBadge(r){
+  const el = document.getElementById('dataBadge');
+  if(!el) return;
+  if(PROD){
+    const a = PROD.asof||{};
+    const cm = {cert:' · 仅认证', nocert:' · 仅非认证'}[S.cert] || '';
+    el.textContent = `🔗 生产库 · 签约数据截至 ${a.contract_signed||'—'}${cm}`;
+    el.title = (PROD.notes?.caveats||[]).join('\n');
+  }else{
+    el.textContent = '⚠️ 演示数据（未连生产库）';
+    el.title = '生产库不可用，漏斗数字为内置演示值';
+  }
+}
+function rateColor(pct){ return pct>=85?'good':pct>=65?'warn':'bad'; }
+// 值为 null（无样本/未接入）时返回 gray —— 不能当 0 处理，那会把「没发券」
+// 误报成「一张没兑」。
+function factorStatus(f,overrideVal){
+  const v = overrideVal!=null ? overrideVal : f.val;
+  if(v==null || !f.target) return 'gray';
+  return rateColor(v / f.target * 100);
+}
+
+// 「跳.因子键」→ 因子库 id（funnel_factor_defs.id / 后端 FETCHERS 的键）。
+// 必须带跳前缀：visit 在 p2a 和 a2t 两跳都存在，扁平映射会串台。
+// 只有列在这里且后端注册了取数函数的因子才拿真实值，其余保持演示/手填。
+const FACTOR_ID = {
+  // 首单礼随「首次开单」一起挪到 a2v1 跳。因子 id 仍叫 a2t_fo —— 那是库里的主键，
+  // 改名会让已有的缓存/用户填的目标失联，不值得。
+  'a2v1.fo':    'a2t_fo',
+  'a2t.meet':   'a2t_meet',
+  'a2t.visit':  'a2t_visit',
+  'a2t.visitD': 'a2t_visit_dahua',
+  'a2t.visitA': 'a2t_visit_dealer',
+};
+function factorIdOf(convKey, factorKey){ return FACTOR_ID[`${convKey}.${factorKey}`]; }
+
+// 明细只走 tooltip，不占版面
+// 因子目标：**只认用户填的值，没有任何预设**（金总 2026-08-01 定）。
+// 因子目标库里没有下发值，各地区基数差一个量级，预设等于拍脑袋 —— 空着让用户填，
+// 比给一个看起来权威的假目标好。因此这里不再回落 f.target（演示值）。
+function factorTargetKey(convKey,factorKey){
+  return `${geoKey()}/${periodKey()}/${convKey}/${factorKey}`;
+}
+function getFactorTarget(convKey,factorKey,f){
+  const stored = (lsGet('factor_targets')||{})[factorTargetKey(convKey,factorKey)];
+  return stored!=null ? stored : null;
+}
+
+function factorTip(real){
+  const d = real.detail;
+  if(real.value==null) return '本地区本周期无样本';
+  if(!d) return '取自生产库（缓存值）';
+  if(d.den==null) return `打卡 ${d.num} 次 · 覆盖 ${d.customers} 家客户 · ${d.people} 名打卡人`;
+  return `发券 ${d.den} 张 · 已兑换 ${d.num} · 待解锁 ${d.pending} · 已失效 ${d.expired}`;
+}
+
+// ── Geo Nav（下拉筛选：11 市 / 97 区县，取自生产库 district_base）─────────────
+// GEO_TREE 由 /api/funnel/geo 填充；取不到时回落到内置演示地区（GEO 的键）。
+let GEO_TREE = null;
+
+function geoCities(){
+  if(GEO_TREE) return GEO_TREE.cities.map(c=>c.city);
+  return Object.keys(GEO[S.province]||{}).filter(k=>k!=='_');
+}
+function geoDistricts(city){
+  if(!city) return [];
+  if(GEO_TREE){
+    const hit = GEO_TREE.cities.find(c=>c.city===city);
+    return hit ? hit.districts : [];
+  }
+  const prov = GEO[S.province]||{};
+  return Object.keys(prov[city]||{}).filter(k=>k!=='_');
+}
+
+function renderGeoNav(){
+  const cities = geoCities();
+  const dists  = geoDistricts(S.city);
+  const opt = (v,label,sel)=>`<option value="${v}" ${sel?'selected':''}>${label}</option>`;
+
+  const mc = meCity();
+  // 地市账号：不给「全省」选项、也不给别的市 —— 服务端已挡（403），这里只是
+  // 不摆一个点了必然报错的入口。地市名渲染成静态文本而不是单选下拉。
+  let h = `<span class="gLbl">${S.province}</span><span class="sep">›</span>`
+    + (mc
+      ? `<span class="gLbl">${mc}</span>
+         <span class="badge" style="background:var(--blue-l);color:var(--blue);
+               border-color:#91caff" title="当前账号「${ME.label}」的数据范围限于本市及其区县">🔒 本市范围</span>`
+      : `<select class="gSelect" onchange="selectCity(this.value||null)">
+          ${opt('',`全省 (${cities.length}市)`,!S.city)}
+          ${cities.map(c=>opt(c,c,S.city===c)).join('')}
+        </select>`);
+
+  if(S.city){
+    h += `<span class="sep">›</span>
+      <select class="gSelect" onchange="selectDist(this.value||null)">
+        ${opt('',`全市 (${dists.length}区县)`,!S.district)}
+        ${dists.map(d=>opt(d,d,S.district===d)).join('')}
+      </select>`;
+  }
+  h += `<span class="navSp"></span>` + certTabsHtml();
+  document.getElementById('geoNav').innerHTML=h;
+
+  const loc = S.district||S.city||S.province;
+  const lvl = S.district?'区县':(S.city?'地市':'全省');
+  document.getElementById('funnelTitle').textContent = `${loc} · ${lvl}汇总`;
+  document.getElementById('funnelSub').textContent = `YTD 全年 + ${periodLabel()}`;
+
+  // 顶栏显示登录身份，免得几个人共用一台电脑时改错了别人的数
+  const who = document.getElementById('whoami');
+  if(ME){
+    who.style.display='';
+    who.className = 'saveStatus ' + (ME.scope==='*' ? 'saved' : 'saving');
+    who.textContent = ME.scope==='*' ? `👤 ${ME.label}（全省）` : `👤 ${ME.label}`;
+    who.title = ME.scope==='*' ? '管理员账号：可查看全省及所有地市'
+                               : `数据范围：${ME.scope} 及其下属区县`;
+  } else { who.style.display='none'; }
+}
+
+// 认证维度筛选。三档的家数取自 /data 的 cert.split（不随当前筛选变），
+// 所以「全部/认证/非认证」三个按钮上的数字始终是本地区的固定分布。
+function certTabsHtml(){
+  const sp = PROD?.cert?.split;
+  const total = sp ? (sp.cert||0)+(sp.nocert||0) : null;
+  const cnt = v => v==null ? '' : `<span class="cnt">${v.toLocaleString()}</span>`;
+  const tab = (k,label,n)=>`<button class="certTab ${S.cert===k?'on':''}"
+    onclick="setCert('${k}')" title="按签约表「${PROD?.cert?.col||'渠道客户类型'}」筛选">${label}${cnt(n)}</button>`;
+  return `<span class="certGrp"><span class="certLbl">认证</span>
+    <span class="certTabs">
+      ${tab('all','全部',total)}
+      ${tab('cert','认证',sp?sp.cert:null)}
+      ${tab('nocert','非认证',sp?sp.nocert:null)}
+    </span></span>`;
+}
+
+function setCert(mode){
+  if(S.cert===mode) return;
+  S.cert = mode;
+  // 只重取数据，目标值和因子不动（它们按 geo+period 存，与认证维度无关）
+  loadProdData().then(paint);
+  paint();
+}
+
+// 当前登录账号。ME.scope==='*' 是管理员；否则是地市账号，只能看本市。
+// 服务端已经按 scope 裁了地区树、并对越权 geo_key 返 403，这里改 UI 只是为了
+// 不让用户点到必然 403 的入口 —— 前端限制是体验，不是安全边界。
+let ME = null;
+function meCity(){ return (ME && ME.scope!=='*') ? ME.scope : null; }
+
+async function loadGeoTree(){
+  try{
+    const r = await apiGet('/geo');
+    if(r.user!==undefined) ME = r.user;
+    if(r.available && r.geo){
+      GEO_TREE = r.geo;
+      S.province = r.geo.province;   // 库口径是"浙江"，不是"浙江省"
+    }
+    // 地市账号：省级视图会 403，直接把作用域钉在本市，别让首屏白跑一次 403
+    const mc = meCity();
+    if(mc && S.city !== mc){ S.city = mc; S.district = null; }
+  }catch(e){ /* 取不到就用内置演示地区 */ }
+}
+
+// ── Period Bar ─────────────────────────────────────────────────────────────────
+function renderPeriodBar(){
+  const isWeek = S.periodType==='week';
+  const year = selectedYear();
+  const opts = periodOptions(S.periodType, year);
+  const selects = opts.map(o=>`<option value="${o.key}" ${o.key===S.periodKey?'selected':''}>${o.label}</option>`).join('');
+  const years = yearOptions().map(y=>
+    `<option value="${y}" ${y===year?'selected':''}>${y}年</option>`).join('');
+  // 未来周期还没数据，取数会全 0/空 —— 明确标出来，免得被当成业绩掉了
+  const now = new Date();
+  const isFuture = isWeek
+    ? (isoWeekRange(year, +S.periodKey.slice(-2)).start > now)
+    : (new Date(year, +S.periodKey.split('-')[1]-1, 1) >
+       new Date(now.getFullYear(), now.getMonth(), 1));
+  let rangeBadge = '';
+  if(isWeek){
+    const m=S.periodKey.match(/(\d{4})-W(\d+)/);
+    if(m){ const r=isoWeekRange(+m[1],+m[2]); rangeBadge=`<span class="pDateRange">📅 ${r.label}</span>`; }
+  }
+  document.getElementById('periodBar').innerHTML=`
+    <div class="pTabs">
+      <button class="pTab ${isWeek?'on':''}" onclick="setPeriodType('week')">按周</button>
+      <button class="pTab ${!isWeek?'on':''}" onclick="setPeriodType('month')">按月</button>
+    </div>
+    <select class="pSelect" style="min-width:88px" onchange="onYearSelect(this.value)">${years}</select>
+    <select class="pSelect" onchange="onPeriodSelect(this.value)">${selects}</select>
+    ${rangeBadge}
+    ${isFuture?`<span class="pDateRange" style="background:#fff7e6;border-color:#ffd591;color:#d46b08"
+      title="该周期尚未开始，实际值为空，可先填目标">🔮 未来周期</span>`:''}
+    <button class="pTab" style="margin-left:auto" onclick="jumpToNow()"
+      title="回到包含今天的周期">今天</button>
+  `;
+}
+function setPeriodType(t){
+  S.periodType=t;
+  // 换周/月视图时保住年份，只把周期落到该年第一项；本年则跳到当前周/月，
+  // 因为"切个视图就跳到 1 月"最不符合预期。
+  const year = selectedYear();
+  const thisYear = new Date().getFullYear();
+  S.periodKey = (year===thisYear)
+    ? (t==='week' ? currentWeekKey() : currentMonthKey())
+    : periodOptions(t, year)[0].key;
+  render();
+}
+function onYearSelect(y){
+  const year = +y;
+  const opts = periodOptions(S.periodType, year);
+  // 尽量停在同一个周号/月份上（W31 → 换年后还是 W31），超出该年周数则落到最后一周
+  const cur = S.periodKey.match(/W(\d+)$/);
+  if(S.periodType==='week' && cur){
+    const w = Math.min(+cur[1], weeksInIsoYear(year));
+    S.periodKey = weekKey(year, w);
+  }else if(S.periodType==='month'){
+    S.periodKey = `${year}-${S.periodKey.split('-')[1]}`;
+  }else{
+    S.periodKey = opts[0].key;
+  }
+  render();
+}
+function onPeriodSelect(key){
+  S.periodKey=key; render();
+}
+function jumpToNow(){
+  S.periodKey = S.periodType==='week' ? currentWeekKey() : currentMonthKey();
+  render();
+}
+
+// ── Funnel Bar（横向：一列一阶，柱高 ∝ 占城市总量的比例）─────────────────────
+// 高度按线性占比，不做对数压缩：漏斗末端本来就该看着矮，压缩会让「掉了多少」
+// 失真。占比过小时给 8% 保底高度，免得柱子退化成一条线看不见。
+function barCol(lbl, sub, ytdN, pN, maxN, color){
+  ytdN = ytdN||0;
+  const ratio = ytdN/(maxN||1);
+  const hPct = Math.min(100, Math.max(8, Math.round(ratio*100)));
+  // 矮柱子放不下数字（含本期徽标时更挤），翻到柱顶外面显示
+  const short = hPct < (pN!=null ? 26 : 17);
+  return `<div class="fCol">
+    <div class="fBarBox">
+      <div class="fBar${short?' short':''}" style="height:${hPct}%;background:${color}"
+           title="${lbl.replace(/<[^>]+>/g,'')}：${ytdN.toLocaleString()} 家">
+        <span class="fNum">${ytdN.toLocaleString()}</span>
+        ${pN!=null?`<span class="fPeriod">+${pN}</span>`:''}
+      </div>
+    </div>
+    <div class="fLbl">${lbl}${sub?`<small>${sub}</small>`:''}</div>
+    <div class="fCount">${Math.round(ratio*1000)/10}% · ${ytdN.toLocaleString()}家</div>
+  </div>`;
+}
+
+// ── Conversion Arrow (click → show factors in right panel) ────────────────────
+// ytdRate/periodRate 为 null 表示算不出（缺上下级增量），显示 — 而不是 0% 或 NaN
+function arrowHtml(id, ytdRate, periodRate, factors, convKey){
+  const fmt = r => r==null ? '—' : `${r}%`;
+  const col = ytdRate==null ? '' : rateColor(ytdRate);
+  const periodCol = periodRate==null ? '' : rateColor(periodRate);
+  const factorKeys = Object.keys(factors);
+  // 只数「有值且低于目标」的。无样本的因子(gray)不算偏低 —— 没发券不等于没做好，
+  // 把它算进偏低数会让箭头常年挂警告。
+  const weakCount = factorKeys.filter(k=>{
+    if(!getFactorActive(convKey,k)) return false;
+    const f=factors[k]; const real=factorReal(factorIdOf(convKey,k));
+    const v = real!==undefined ? real.value
+      : (f.source==='manual' ? getManualFactor(k,convKey) : null);
+    const st = factorStatus({...f,target:getFactorTarget(convKey,k,f)}, v);
+    return st==='bad' || st==='warn';
+  }).length;
+  const hint = weakCount>0?`⚠️ ${weakCount}项`:'✅ 达标';
+  const isSel = S.selectedArrow === id;
+  // 横向布局：徽标竖排夹在两根柱子中间，箭头符号改成向右
+  return `<div class="aWrap${isSel?' sel':''}">
+    <div class="aBadgeRow">
+      <div class="aRate ${col}" title="全年累计转化率">${fmt(ytdRate)}</div>
+      <div class="aRate ${periodCol}" style="font-size:11px"
+        title="本期增量转化率，上下级缺增量时显示 —">本期 ${fmt(periodRate)}</div>
+      <button class="aToggle${isSel?' selected':''}" onclick="selectArrow('${id}')"
+        title="查看该跳的关键因素">${hint} ${isSel?'✕':'▾'}</button>
+    </div>
+    <div class="aArrowGlyph">▶</div>
+  </div>`;
+}
+
+// ── Main Funnel Render ─────────────────────────────────────────────────────────
+function renderFunnel(){
+  const d = currentData(); const pk = periodKey();
+  const y = d.ytd; const p = (d.period||{})[pk]||{};
+  // 四阶同源同口径、逐层收紧（总量 ⊇ 授权 ⊇ 激活V2+ ⊇ 高级V3+），
+  // 所以柱子基准直接取 pool，不会溢出。
+  const maxN = Math.max(y.pool||0, 1);
+  const yf = d.ytdF||{}; const pf = (d.periodF||{})[pk]||{};
+  const rate = (num,den)=> (den>0 && num!=null) ? Math.round(num/den*100) : null;
+  const fmtPct = r => r==null ? '—' : `${r}%`;
+  // YTD 转化率（五阶 → 四跳）
+  const yR1 = rate(y.authorized, y.pool);            // 渗透率
+  const yR1b = rate(y.activated_v1, y.authorized);   // 授权 → V1+（首次开单）
+  const yR2 = rate(y.activated, y.activated_v1);     // V1+ → V2+（激活）
+  const yR3 = rate(y.senior, y.activated);
+  // 本期转化率：只在上下两级都有本期增量时才算，算不出就显示 —，不做近似换算
+  const pR1 = rate(p.authorized, y.pool);
+  const pR1b = rate(p.activated_v1, p.authorized);
+  const pR2 = rate(p.activated, p.activated_v1);
+  const pR3 = rate(p.senior, p.activated);
+  // factors to use: prefer period factors when available
+  const useF = (key) => (pf[key] && Object.keys(pf[key]).length) ? pf[key] : (yf[key]||{});
+
+  // 渗透率抬头：品牌在市场客群的渗透率，本页核心指标
+  const pen = d.penetration!=null ? d.penetration : yR1;
+  const aside = d.aside||{};
+  const certTag = {cert:'认证', nocert:'非认证'}[S.cert] || '';
+  let h = `<div class="penBox">
+      <div class="penMain"><span class="penNum">${pen!=null?pen+'%':'—'}</span>
+        <span class="penLbl">${certTag||'品牌'}渗透率<br><span class="penFml">${
+          certTag?`${certTag}授权签约`:'授权签约'} ÷ 城市总量</span></span></div>
+      <div class="penSide">${(y.authorized||0).toLocaleString()} / ${(y.pool||0).toLocaleString()} 家${
+        certTag?'　·　城市总量无认证维度，仍为全量':''}${
+        aside.intent!=null ? `　·　潜客池 ${aside.intent.toLocaleString()} 家${
+          aside.intent_signed!=null?`（已建档 ${aside.intent_signed.toLocaleString()}）`:''}` : ''}</div>
+    </div>`;
+
+  // 五阶横排，四个箭头夹在相邻两阶之间。柱色由浅到深，与「逐层收紧」同向。
+  h += `<div class="fFlow">`
+    + barCol('城市服务商总量', '市场天花板', y.pool, null, maxN, '#91caff')
+    + arrowHtml('p2a', yR1, pR1, useF('p2a'), 'p2a')
+    + barCol('授权/签约', '', y.authorized, p.authorized, maxN, '#69b1ff')
+    + arrowHtml('a2v1', yR1b, pR1b, useF('a2v1'), 'a2v1')
+    + barCol('已开单', 'V1 以上', y.activated_v1, p.activated_v1, maxN, '#4096ff')
+    + arrowHtml('a2t', yR2, pR2, useF('a2t'), 'a2t')
+    + barCol('已激活', 'V2 以上', y.activated, p.activated, maxN, '#0958d9')
+    + arrowHtml('t2v', yR3, pR3, useF('t2v'), 't2v')
+    + barCol('高级服务商', 'V3 以上', y.senior, p.senior, maxN, '#003eb3')
+    + `</div>`;
+
+  // 高级服务商内部分档：仅作明细展示，不是漏斗层级（分层转化非当前目标）
+  const t = d.tiers;
+  if(t){
+    h += `<div class="tierLine">高级服务商分档：
+      V3 <b>${(t.v3||0).toLocaleString()}</b>
+      V4 <b>${(t.v4||0).toLocaleString()}</b>
+      V5 <b>${(t.v5||0).toLocaleString()}</b>
+      <span style="color:var(--muted)">（V0 ${(t.v0||0).toLocaleString()} · V1 ${(t.v1||0).toLocaleString()} · V2 ${(t.v2||0).toLocaleString()}）</span></div>`;
+  }
+  // 口径说明不占版面 —— 全部 caveats 挂在顶部数据徽标的 tooltip 上（setDataBadge）
+  document.getElementById('funnelWrap').innerHTML = h;
+}
+
+// ── Side Table (YTD + Period completion with editable targets) ─────────────────
+const TGT_LOCK_TIP = '年初下达的全年目标（provider_target），库内即权威值，不可修改';
+
+// 本期目标输入框的 tooltip：说清预设值是怎么算出来的，以及用户可以改。
+// 口径说明只走 tooltip，不占版面（与页面其它说明一致）。
+function periodTgtTip(level){
+  if(!TARGETS) return '本期目标（可手填）';
+  const parts = (TARGETS.notes||[]).slice();
+  if(TARGETS.period?.[level]==null) parts.push('该档无预设值，请手填。');
+  return parts.join('\n') || '本期目标（可手填）';
+}
+
+// ── 下级卷积单元格 ────────────────────────────────────────────────────────────
+// 显示「下级目标之和」以及与本级目标的差额。差额只是提示，不改任何值 ——
+// 本级目标是年初独立下达的（provider_target 自己一行），通常留了缓冲，
+// 与下级之和不等是正常的，不是错误。
+function rollCell(scope, level){
+  const r = ROLLUP?.[scope]?.[level];
+  if(!r || r.sum==null){
+    // 一个下级都没有目标值：给「—」而不是 0，0 会被读成"下级目标就是 0"
+    const miss = r?.n_missing ? `${r.n_missing} 个下级均无目标值` : '无卷积数据';
+    return `<td><span class="rollNone" title="${miss}">—</span></td>`;
+  }
+  // 差额对标**页面上显示的**本级目标（getTarget），不用后端返回的 r.own ——
+  // 本期目标用户可以改，改完不重取卷积接口，用 r.own 算差额会和眼前的数字对不上。
+  const own = getTarget(level, scope==='period');
+  const diff = own!=null ? r.sum - own : null;
+  // 差额的颜色只表达方向，不表达好坏：下级之和高于本级目标是"下面压得比上面紧"，
+  // 反过来是"下面加起来还没够上面的盘子"。哪个算问题得看管理意图，所以不用红绿。
+  const diffTxt = diff==null ? ''
+    : `<span class="rollDiff ${diff>=0?'over':'under'}"
+             title="下级之和 − 本级目标 = ${diff>=0?'+':''}${diff.toLocaleString()}">${diff>=0?'+':''}${diff.toLocaleString()}</span>`;
+  const tip = [
+    `${ROLLUP.children_kind==='city'?'地市':'区县'}之和：${r.sum.toLocaleString()}`,
+    `本级目标：${own!=null?own.toLocaleString():'—'}`,
+    `已填 ${r.n_stored} 个 / 预设 ${r.n_preset} 个 / 缺 ${r.n_missing} 个`,
+    r.n_missing ? `缺目标：${(r.missing||[]).join('、')}${r.n_missing>(r.missing||[]).length?' 等':''}` : '',
+    '缺口按未纳入处理，不按 0 计入',
+  ].filter(Boolean).join('\n');
+  return `<td><span class="rollSum" title="${tip}">${r.sum.toLocaleString()}</span>
+    ${diffTxt}${r.n_missing?`<span class="rollWarn" title="${tip}">缺${r.n_missing}</span>`:''}</td>`;
+}
+function rollFootnote(){
+  const kind = ROLLUP.children_kind==='city' ? '地市' : '区县';
+  const miss = LEVELS_MISSING();
+  return `<div class="caveat" style="margin-top:10px;background:#f6ffed;
+      border-color:#b7eb8f;color:#274e13">
+    📎 <b>${kind}卷积</b>＝本级各${kind}目标之和（每个${kind}取「已手填值 ?? 节奏预设值」）。
+    差额 = 卷积 − 本级目标；<b>本级目标不会被卷积值改写</b> ——
+    本级目标是年初独立下达的，通常留有缓冲，与下级之和不等属正常。
+    ${miss?`<br>⚠️ ${miss}`:''}
+  </div>`;
+}
+// 缺目标的下级提示文案。区县级没有下发目标、预设也没有，是常态缺口，要说明清楚。
+function LEVELS_MISSING(){
+  const p = ROLLUP?.period?.authorized;
+  if(!p || !p.n_missing) return '';
+  const kind = ROLLUP.children_kind==='city' ? '地市' : '区县';
+  return `有 ${p.n_missing} 个${kind}未设目标`
+    + (ROLLUP.children_kind==='district'
+        ? '（目标只下发到地市级，区县无预设值，需手填）'
+        : '')
+    + `，卷积值未包含它们。`;
+}
+
+function renderSideTable(){
+  const d = currentData(); const pk = periodKey();
+  const y = d.ytd; const p = (d.period||{})[pk]||{};
+  // 只列可被目标管理的三阶。城市总量是市场天花板、不是目标；意向是旁注不占层级；
+  // V3/V4/V5 合并进「高级服务商」，内部分层转化非当前目标。
+  const LEVELS = [
+    {k:'authorized',l:'授权签约'},
+    {k:'activated_v1',l:'已开单 (V1+)'},
+    {k:'activated',l:'已激活 (V2+)'},
+    {k:'senior',l:'高级服务商 (V3+)'}
+  ];
+  // 下级卷积列：省级显示 11 地市之和，市级显示其下区县之和，区县级没有下级不显示
+  const rollKind = ROLLUP?.children_kind;
+  const showRoll = !!ROLLUP && (rollKind==='city' || rollKind==='district');
+  const rollLbl = rollKind==='city' ? '地市卷积' : '区县卷积';
+  let h = `<table class="sTable"><thead><tr>
+    <th>层级</th><th>全年实际</th><th>全年目标</th>
+    ${showRoll?`<th>${rollLbl}</th>`:''}<th>完成率</th>
+    <th>本期+</th><th>本期目标</th>
+    ${showRoll?`<th>${rollLbl}</th>`:''}<th>完成率</th>
+  </tr></thead><tbody>`;
+  LEVELS.forEach(({k,l})=>{
+    const yAct = y[k]??0; const yTgt = getTarget(k,false);
+    const pAct = p[k]??0; const pTgt = getTarget(k,true);
+    const yPct = yTgt ? Math.round(yAct/yTgt*100) : null;
+    const pPct = pTgt ? Math.round(pAct/pTgt*100) : null;
+    const yCol = yPct!=null?rateColor(yPct):'';
+    const pCol = pPct!=null?rateColor(pPct):'';
+    const yBar = yPct!=null?`<span class="pBar"><span class="pBarF ${yCol}" style="width:${Math.min(yPct,100)}%"></span></span><span class="pct ${yCol}">${yPct}%</span>`:'—';
+    const pBar = pPct!=null?`<span class="pBar"><span class="pBarF ${pCol}" style="width:${Math.min(pPct,100)}%"></span></span><span class="pct ${pCol}">${pPct}%</span>`:'—';
+    // 全年目标：库里有下发值就显示成只读文本（不是输入框）—— 那是年初下达的
+    // 权威值，页面无权改。库里没有（区县级/该档无下发）才给输入框手填。
+    const yTgtCell = ytdLocked(k)
+      ? `<span class="tgtLocked" title="${TGT_LOCK_TIP}">${yTgt.toLocaleString()} 🔒</span>`
+      : `<span class="tgtCell"><input class="tgtInput" type="number" value="${yTgt??''}" placeholder="填目标" onchange="saveTarget('${k}',false,this.value)" title="库中无下发目标，可手填"></span>`;
+    // 本期目标：预设值来自节奏分解，可改
+    const pTgtCell = `<span class="tgtCell"><input class="tgtInput" type="number" value="${pTgt??''}" placeholder="填目标" onchange="saveTarget('${k}',true,this.value)" title="${periodTgtTip(k)}"></span>`;
+    h+=`<tr><td><b>${l}</b></td><td>${yAct}</td><td>${yTgtCell}</td>
+            ${showRoll?rollCell('ytd',k):''}<td>${yBar}</td>
+            <td>+${pAct}</td><td>${pTgtCell}</td>
+            ${showRoll?rollCell('period',k):''}<td>${pBar}</td></tr>`;
+  });
+  h+=`</tbody></table>`;
+  if(showRoll) h += rollFootnote();
+  // 目标是人定的、按 geo+period 存，不随认证筛选变；实际值会变。所以切到认证/非认证
+  // 时完成率必然下降 —— 这是分子被筛过、分母没筛，得说清楚免得被当成掉目标。
+  if(S.cert!=='all'){
+    const t = {cert:'认证', nocert:'非认证'}[S.cert];
+    h += `<div class="caveat" style="margin-top:10px">ℹ️ 当前只看 <b>${t}</b> 服务商：
+      实际值已按认证筛选，但目标值是全量目标（目标不随认证维度拆分），
+      所以完成率会低于「全部」口径，两者不可直接比。</div>`;
+  }
+  document.getElementById('sideWrap').innerHTML = h;
+}
+
+// ── Todo helpers (per geo + period) ───────────────────────────────────────────
+function getTodos(){
+  const all = lsGet('todos')||{};
+  return all[`${geoKey()}/${periodKey()}`]||[];
+}
+function setTodos(list){
+  const all = lsGet('todos')||{};
+  all[`${geoKey()}/${periodKey()}`] = list;
+  lsSet('todos', all); scheduleSave();
+}
+function addTodo(){
+  const list = getTodos();
+  list.push({text:'', done:false});
+  setTodos(list); renderDock();
+  setTimeout(()=>{
+    const inputs = document.querySelectorAll('.todoInput');
+    if(inputs.length) inputs[inputs.length-1].focus();
+  }, 30);
+}
+function toggleTodo(idx){
+  const list = getTodos(); if(!list[idx]) return;
+  list[idx].done = !list[idx].done;
+  setTodos(list); renderDock();
+}
+function deleteTodo(idx){
+  const list = getTodos();
+  list.splice(idx,1);
+  setTodos(list); renderDock();
+}
+function updateTodoText(idx, val){
+  const list = getTodos(); if(!list[idx]) return;
+  list[idx].text = val; setTodos(list);
+}
+
+// ── 待办侧边栏 ────────────────────────────────────────────────────────────────
+// 三态：locked 锁定（挤窄左侧内容）/ float 浮动（压在内容上）/ hidden 收起。
+// 状态是使用习惯、不是业务数据，所以存 localStorage 且**不跟地区/周期走**，
+// 也不进 buildSlice() —— 否则切个地区侧栏就自己开合，且会污染同事看到的切片。
+function getDockMode(){
+  const m = lsGet('todo_dock');
+  return (m==='locked'||m==='float'||m==='hidden') ? m : 'locked';
+}
+function setDockMode(mode){
+  // 记住上一次「开着」时是锁定还是浮动，收起后从拉手点回来按原样恢复，
+  // 不要每次都回到某个固定态
+  if(mode!=='hidden') lsSet('todo_dock_last', mode);
+  lsSet('todo_dock', mode);
+  applyDock();
+  // 锁定/解锁会改变可用宽度，漏斗那 9 列要重排一次
+  renderFunnel();
+}
+function toggleDockLock(){
+  setDockMode(getDockMode()==='locked' ? 'float' : 'locked');
+}
+function reopenDock(){
+  const last = lsGet('todo_dock_last');
+  setDockMode(last==='float' ? 'float' : 'locked');
+}
+// DOM 落地：类名 + body 让位 + 拉手显隐。渲染内容的活交给 renderDock()
+function applyDock(){
+  const mode = getDockMode();
+  const dock = document.getElementById('todoDock');
+  const tab  = document.getElementById('dockTab');
+  const lock = document.getElementById('dockLockBtn');
+  if(!dock) return;
+  dock.classList.toggle('hidden', mode==='hidden');
+  dock.classList.toggle('float',  mode==='float');
+  document.body.classList.toggle('dockLocked', mode==='locked');
+  tab.classList.toggle('gone', mode!=='hidden');
+  lock.textContent = mode==='locked' ? '📌' : '📍';
+  lock.title = mode==='locked' ? '已锁定（点击改为浮动，左侧内容恢复全宽）'
+                               : '浮动中（点击锁定，左侧内容等比压窄让位）';
+  lock.classList.toggle('on', mode==='locked');
+  renderDock();
+}
+function renderDock(){
+  const body = document.getElementById('dockBody');
+  if(!body) return;
+  const list = getTodos();
+  const undone = list.filter(t=>!t.done).length;
+  document.getElementById('dockCnt').textContent =
+    list.length ? `${undone}/${list.length}` : '';
+  // 待办是按 地区+周期 存的，侧栏常驻不随内容滚动，必须显式标出当前作用域，
+  // 否则用户切了地区看到待办变空会以为数据丢了
+  document.getElementById('dockScope').textContent =
+    `${S.district||S.city||S.province} · ${periodLabel()}`;
+  body.innerHTML = todoListHtml(list)
+    + `<button class="todoAddBtn" onclick="addTodo()">＋ 添加待办</button>`;
+}
+// 待办条目 HTML，侧栏与（历史上的）本周重点共用
+function todoListHtml(list){
+  if(!list.length) return '<div style="font-size:13px;color:var(--gray);'
+    + 'padding:6px 0">暂无待办</div>';
+  return list.map((t,i)=>`<div class="todoItem${t.done?' done':''}">
+    <input type="checkbox" class="todoChk" ${t.done?'checked':''} onchange="toggleTodo(${i})">
+    <input class="todoInput" type="text" value="${t.text.replace(/"/g,'&quot;')}"
+           placeholder="填写待办内容…"
+           onchange="updateTodoText(${i},this.value)"
+           onkeydown="if(event.key==='Enter'&&this.value.trim()){addTodo()}">
+    <button class="todoDel" onclick="deleteTodo(${i})" title="删除">✕</button>
+  </div>`).join('');
+}
+
+// ── Focus Panel ────────────────────────────────────────────────────────────────
+// 某跳里「有值且低于目标」的因子名。无样本(gray)不算短板 —— 没发券不等于没做好；
+// 没填目标也不算 —— 因子目标不预设，没目标就无从判断偏低。
+function weakFactorLabels(d, convKey){
+  const f = d.ytdF?.[convKey] || {};
+  return Object.keys(f).filter(k=>{
+    const real = factorReal(factorIdOf(convKey,k));
+    const v = real!==undefined ? real.value
+      : (f[k].source==='manual' ? getManualFactor(k,convKey) : null);
+    const st = factorStatus({...f[k],target:getFactorTarget(convKey,k,f[k])}, v);
+    return st==='bad' || st==='warn';
+  }).map(k=>f[k].label);
+}
+
+function renderFocus(){
+  const d = currentData(); const pk = periodKey();
+  const y = d.ytd; const p = (d.period||{})[pk]||{};
+  const loc = S.district||S.city||S.province;
+  const issues = [];
+  const rate = (num,den)=> (den>0 && num!=null) ? Math.round(num/den*100) : null;
+  const pAct = p.activated??0; const pTgtAct = getTarget('activated',true);
+  // 认证筛选下实际值被筛过、目标没筛，对标目标会假报警，故只在「全部」口径下判目标
+  const tgtComparable = S.cert==='all';
+  // Check period target completion
+  if(tgtComparable && pTgtAct && pAct < pTgtAct*0.7){
+    issues.push({lvl:'bad',title:`本期激活 目标完成仅 ${Math.round(pAct/pTgtAct*100)}%`,
+      desc:`已激活 ${pAct} 家，目标 ${pTgtAct} 家，缺口 ${pTgtAct-pAct} 家`,
+      task:`[任务] 要求${loc}BD 本周集中推动已授权未激活服务商核销首单礼，目标补齐 ${pTgtAct-pAct} 家`});
+  }
+  // 授权→V1（首次开单）和 V1→V2（激活）分开判：两跳抓手不同，合成一条给不出
+  // 可执行的动作。哪跳掉得多就报哪跳。
+  const yRv1 = rate(y.activated_v1, y.authorized);
+  const yRv2 = rate(y.activated, y.activated_v1);
+  if(yRv1!=null && yRv1 < 70){
+    const weak = weakFactorLabels(d,'a2v1');
+    issues.push({lvl:'bad',title:`授权→开单(V1+) 转化率偏低（${yRv1}%）`,
+      desc:`短板：${weak.length?weak.join('、'):'签约后首单未破冰'}　`
+        + `已授权 ${(y.authorized||0).toLocaleString()} 家中仅 ${(y.activated_v1||0).toLocaleString()} 家开过单`,
+      task:`[任务] 要求${loc} 业务员本周逐家跟进签约后零开单的服务商，用首单礼推动首次下单`});
+  }
+  if(yRv2!=null && yRv2 < 70){
+    const weak = weakFactorLabels(d,'a2t');
+    issues.push({lvl:'bad',title:`开单(V1+)→激活(V2+) 转化率偏低（${yRv2}%）`,
+      desc:`短板：${weak.length?weak.join('、'):'整体跑动不足'}　`
+        + `已开单 ${(y.activated_v1||0).toLocaleString()} 家中 ${(y.activated||0).toLocaleString()} 家达激活门槛`,
+      task:`[任务] 要求${loc} 业务员本周对已开单未激活服务商每家跑动≥2次，推动激活台数解锁转化红包`});
+  }
+  // 渗透率：不设固定阈值（各地市基数差异大），只在填了全年授权目标时对标目标
+  const yTgtAuth = getTarget('authorized',false);
+  const pen = d.penetration!=null ? d.penetration : rate(y.authorized, y.pool);
+  if(tgtComparable && yTgtAuth && y.authorized!=null && y.authorized < yTgtAuth*0.9){
+    const penTgt = y.pool>0 ? Math.round(yTgtAuth/y.pool*1000)/10 : null;
+    issues.push({lvl:'warn',title:`品牌渗透率 ${pen!=null?pen+'%':'—'}，未达目标${penTgt!=null?` ${penTgt}%`:''}`,
+      desc:`已授权 ${(y.authorized||0).toLocaleString()} 家 / 城市总量 ${(y.pool||0).toLocaleString()} 家，`
+        + `距全年目标 ${yTgtAuth.toLocaleString()} 家缺口 ${(yTgtAuth-y.authorized).toLocaleString()} 家`,
+      task:`[任务] 要求${loc}业务员本周重点开发未签约门店，补齐授权缺口 ${(yTgtAuth-y.authorized).toLocaleString()} 家`});
+  }
+  // 推广会参会率：因子目标没有预设，只有用户填了目标才判短板（否则无从对标）
+  const pa = d.ytdF?.a2t?.pa;
+  const paTgt = getFactorTarget('a2t','pa',pa);
+  const paReal = factorReal(factorIdOf('a2t','pa'));
+  const paVal = paReal!==undefined ? paReal.value : (pa ? pa.val : null);
+  if(paVal!=null && paTgt && paVal < paTgt*0.8){
+    issues.push({lvl:'warn',title:`推广会参会率不足（${paVal}%，目标${paTgt}%）`,
+      desc:`本周期推广会覆盖率低，影响签约转化`,
+      task:`[任务] ${loc}本周安排1场推广会，邀约意向服务商≥20家，使用6+1红包提升到场率`});
+  }
+  if(!issues.length){
+    issues.push({lvl:'ok',title:'各环节运转正常 ✅',
+      desc: tgtComparable ? '全年及本期各转化率均在目标区间，保持现有节奏即可'
+        : '当前为认证维度筛选口径，目标对标已暂停（目标为全量、实际已筛选，'
+          + '两者不同口径）。切回「全部」可看目标预警。',
+      task:null});
+  }
+  const anomalyHtml = issues.map(iss=>`<div class="focusItem ${iss.lvl}">
+    <div class="fTitle">${iss.lvl==='bad'?'🚨':iss.lvl==='warn'?'⚠️':'✅'} ${iss.title}</div>
+    <div class="fDesc">${iss.desc}</div>
+    ${iss.task?`<button class="fCopyBtn" onclick="copyTask(this,'${iss.task.replace(/'/g,"\\'")}')">📋 复制任务指令</button>`:''}
+  </div>`).join('');
+
+  // 待办项已移出本卡片，改由右侧常驻侧栏承载（renderDock）。这里只留异常项，
+  // 免得同一份待办出现两处、两边各自渲染又不同步。
+  const undone = getTodos().filter(t=>!t.done).length;
+  document.getElementById('focusWrap').innerHTML = `
+    <div class="focusSectionLbl">⚠️ 异常项</div>
+    ${anomalyHtml}
+    <div class="focusSectionLbl" style="margin-top:16px">📝 待办项</div>
+    <div style="font-size:13px;color:var(--text-s);padding:4px 0 8px">
+      ${undone ? `有 <b>${undone}</b> 项未完成` : '暂无未完成待办'}
+      —— 在右侧「📝 待办」侧栏管理
+    </div>
+    <button class="todoAddBtn" onclick="setDockMode('locked')">→ 打开待办侧栏</button>
+  `;
+}
+
+// ── Factor Panel Render ────────────────────────────────────────────────────────
+// ── Arrow Selection ────────────────────────────────────────────────────────────
+function selectArrow(id){
+  S.selectedArrow = (S.selectedArrow === id) ? null : id;
+  renderFunnel();       // re-render funnel to update sel highlight
+  renderFactorPanel();  // update right panel
+}
+
+// ── Factor toggles + custom factor management ──────────────────────────────────
+function toggleFactor(convKey, factorKey, active){
+  setFactorActive(convKey, factorKey, active);
+  renderFunnel();       // update weak-count badge on arrow
+  renderFactorPanel();
+}
+
+function addCustomFactor(convKey){
+  const list = getCustomFactors(convKey);
+  // target 留空 —— 因子目标一律不预设（同 getFactorTarget 的注释）
+  list.push({name:'新指标', val:'', target:'', unit:'%'});
+  setCustomFactors(convKey, list);
+  renderFactorPanel();
+}
+
+function deleteCustomFactor(convKey, idx){
+  const list = getCustomFactors(convKey);
+  list.splice(idx, 1);
+  setCustomFactors(convKey, list);
+  renderFactorPanel();
+}
+
+function updateCustomFactor(convKey, idx, field, val){
+  const list = getCustomFactors(convKey);
+  if(!list[idx]) return;
+  list[idx][field] = (field==='val'||field==='target') ? parseFloat(val)||0 : val;
+  setCustomFactors(convKey, list);
+}
+
+function renderFactorPanel(){
+  const panel = document.getElementById('factorPanel');
+  if(!S.selectedArrow){
+    panel.innerHTML = `<div class="cHdr"><span class="cTitle">📋 关键因素</span>
+      <span class="cSub">点击漏斗箭头查看</span></div>
+      <div class="fpEmpty"><div class="fpIcon">👆</div>
+        <div style="font-size:13px">点击漏斗中的<br>转化率箭头查看<br>并配置关键因素</div></div>`;
+    return;
+  }
+  const convKey = S.selectedArrow;
+  const d = currentData(); const pk = periodKey();
+  const pf = (d.periodF||{})[pk]||{};
+  const yf = d.ytdF||{};
+  const factors = (pf[convKey]&&Object.keys(pf[convKey]).length) ? pf[convKey] : (yf[convKey]||{});
+  const customF = getCustomFactors(convKey);
+  let rows = Object.entries(factors).map(([k,f])=>{
+    const active = getFactorActive(convKey,k);
+    // 真实取数优先：接入了因子库的指标用库里的值，没接入的还是演示/手填值。
+    const real = factorReal(factorIdOf(convKey,k));
+    const mv = real !== undefined ? real.value
+      : (f.source==='manual' ? (getManualFactor(k,convKey)??f.val) : f.val);
+    const tgt = getFactorTarget(convKey,k,f);
+    const st = (active && mv!=null) ? factorStatus({...f,target:tgt}, mv) : 'gray';
+    const displayVal = mv==null ? '—'
+      : (f.unit==='%' ? `${mv}%` : `${mv}${f.unit}`);
+    // 真实值一律只读（库里算出来的，手改会掩盖口径问题）
+    const valHtml = (real===undefined && f.source==='manual')
+      ? `<input class="fpManual" type="number" value="${mv??''}" ${!active?'disabled':''} onchange="saveManual('${k}','${convKey}',this.value)">`
+      : `<span class="fpVal" style="${!active||mv==null?'color:var(--gray)':''}"
+           title="${real!==undefined?factorTip(real):''}">${displayVal}</span>`;
+    const srcTag = real!==undefined
+      ? `<span class="fpSrc db" title="${factorTip(real)}">${mv==null?'🔗 无数据':'🔗 生产库'}</span>`
+      : `<span class="fpSrc ${f.source}">${f.source==='db'?'🔗 系统':'✏️ 手填'}</span>`;
+    return `<div class="fpItem" style="${!active?'opacity:0.45':''}">
+      <input type="checkbox" class="fpChk" ${active?'checked':''} onchange="toggleFactor('${convKey}','${k}',this.checked)">
+      <div class="fpDot ${st}"></div>
+      <div class="fpName" title="${f.label}">${f.label}</div>
+      ${valHtml}
+      <input class="fpTgt" type="number" value="${tgt??''}" placeholder="目标" ${!active?'disabled':''} onchange="saveFactorTarget('${convKey}','${k}',this.value)">
+      <span class="fpUnit">${f.unit}</span>
+      ${srcTag}
+    </div>`;
+  }).join('');
+  // 分子分母等明细不再单独占版面 —— 鼠标悬停数值即可看（见 factorTip）
+  let customRows = customF.map((cf,i)=>`<div class="fpItem">
+    <input type="checkbox" class="fpChk" checked>
+    <div class="fpDot gray"></div>
+    <input style="flex:1;border:none;border-bottom:1px dashed var(--border);background:transparent;font-size:13px;min-width:0" value="${cf.name}" onchange="updateCustomFactor('${convKey}',${i},'name',this.value)" placeholder="指标名称">
+    <input class="fpManual" type="number" value="${cf.val}" onchange="updateCustomFactor('${convKey}',${i},'val',this.value)">
+    <input class="fpTgt" type="number" value="${cf.target}" onchange="updateCustomFactor('${convKey}',${i},'target',this.value)">
+    <span class="fpUnit">${cf.unit||'%'}</span>
+    <span class="fpSrc manual">✏️ 手填</span>
+    <button class="fpDel" onclick="deleteCustomFactor('${convKey}',${i})">✕</button>
+  </div>`).join('');
+  panel.innerHTML = `<div class="cHdr">
+    <span class="cTitle">📋 关键因素</span>
+    <span class="cSub">${ARROW_NAMES[convKey]||convKey}</span>
+  </div>
+  <div style="padding:12px 16px">
+    <div class="fpSectionLbl">建议指标（勾选启用）</div>
+    ${rows}
+    ${customF.length?`<div class="fpSectionLbl" style="margin-top:12px">自定义指标</div>${customRows}`:''}
+    <button class="fpAddBtn" onclick="addCustomFactor('${convKey}')">＋ 添加自定义指标</button>
+    <div class="fpLibBtn">📚 从指标库选择（开发中）</div>
+  </div>`;
+}
+function selectCity(c){
+  // 地市账号越不出本市。下拉框里本来就没有别的选项，这里是兜底（改 DOM/控制台）——
+  // 真正的边界在服务端，越权请求一律 403。
+  const mc = meCity();
+  if(mc && c!==mc) return;
+  S.city=c; S.district=null; render();
+}
+function selectDist(d){ S.district=d; render(); }
+function saveManual(factorKey,convKey,val){
+  const n=parseFloat(val); if(isNaN(n)) return;
+  // 同 saveTarget：只 paint()，不 render() —— 见那里的注释
+  setManualFactor(factorKey,convKey,n); scheduleSave(); paint();
+}
+function saveTarget(level,isPeriod,val){
+  // 全年目标锁死时连输入框都不渲染，这里再兜一道：即便被绕过（改 DOM/控制台）
+  // 也不写入，免得本地覆盖值和库里的下发值不一致。
+  if(!isPeriod && ytdLocked(level)){ paint(); return; }
+  const s = (val??'').toString().trim();
+  // 清空输入 = 删除该目标（回落到预设值），不是"忽略这次编辑"
+  const n = s==='' ? null : parseInt(s,10);
+  if(n!==null && (isNaN(n) || n<0)) return;
+  setTarget(level,isPeriod,n);
+  scheduleSave();
+  // 只重画，不 render() —— render() 会 loadSlice() 拉回服务器上的旧切片，
+  // 在 800ms 防抖保存发出之前把刚填的目标覆盖掉。目标是纯本地状态，
+  // 改了它既不用重取生产数据也不用重读切片。
+  paint();
+}
+function saveFactorTarget(convKey,factorKey,val){
+  const s=(val??'').toString().trim();
+  const m=lsGet('factor_targets')||{};
+  const key=factorTargetKey(convKey,factorKey);
+  if(s===''){ delete m[key]; }
+  else { const n=parseFloat(s); if(isNaN(n)||n<0) return; m[key]=n; }
+  lsSet('factor_targets',m); scheduleSave(); paint();
+}
+function copyTask(btn,text){
+  navigator.clipboard.writeText(text).then(()=>{
+    btn.textContent='✅ 已复制'; setTimeout(()=>btn.textContent='📋 复制任务指令',2000);
+  }).catch(()=>{ btn.textContent='复制失败，请手动'; });
+}
+
+// ── API layer ──────────────────────────────────────────────────────────────────
+const API = '/api/funnel';
+let saveTimer=null, apiAvailable=false;
+
+function setSaveStatus(kind,text){
+  const el=document.getElementById('saveStatus');
+  if(!el) return;
+  el.className='saveStatus '+kind; el.textContent=text;
+}
+
+async function apiGet(path){
+  const r=await fetch(API+path);
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+async function apiPost(path,body){
+  const r=await fetch(API+path,{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+// Collect every user-editable value scoped to the current geo+period into one slice
+function buildSlice(){
+  const gk=geoKey(), pk=periodKey(), pre=`${gk}/${pk}/`;
+  const pick=(store)=>Object.fromEntries(
+    Object.entries(lsGet(store)||{}).filter(([k])=>k.startsWith(pre)));
+  return {
+    geo:{province:S.province,city:S.city,district:S.district},
+    targets:(lsGet('targets')||{})[gk]||{},
+    manual:((lsGet('manual')||{})[gk]||{})[pk]||{},
+    factor_active:pick('factor_active'),
+    factor_targets:pick('factor_targets'),
+    custom_factors:pick('custom_factors'),
+    todos:(lsGet('todos')||{})[`${gk}/${pk}`]||[],
+  };
+}
+
+// geo_key/period_key travel as query params — they contain '/' separators
+function scopeQS(){
+  return `?geo_key=${encodeURIComponent(geoKey())}&period_key=${encodeURIComponent(periodKey())}`;
+}
+
+// 认证维度只影响取数(/data)，不进 /state：切片存的是目标和因子，按 geo+period 存，
+// 挂上 cert 会把同一周期的目标拆成三份，跟"目标值不随认证筛选变"冲突。
+function dataQS(){
+  return `${scopeQS()}&cert=${encodeURIComponent(S.cert||'all')}`;
+}
+
+// Debounced slice write — every edit lands in the DB keyed to the fixed period
+// pendingSave 记下"还没落库的编辑属于哪个 geo+period"。loadSlice 据此避让：
+// 拉回来的旧切片不能覆盖同一作用域里刚填、还在防抖窗口里的值。
+let pendingSave = null;
+
+function scheduleSave(){
+  if(!apiAvailable) return;
+  clearTimeout(saveTimer);
+  // 作用域在下单时就钉死：定时器 800ms 后才跑，这期间用户可能已切了周期，
+  // 到时候再调 scopeQS() 会把这次编辑写到新周期名下。
+  const qs = scopeQS(), label = periodLabel(), ptype = S.periodType;
+  const body = {period_type:ptype, state:buildSlice()};
+  pendingSave = qs;
+  setSaveStatus('saving','💾 保存中…');
+  saveTimer=setTimeout(async()=>{
+    try{
+      await apiPost(`/state${qs}`, body);
+      if(pendingSave===qs) pendingSave = null;
+      setSaveStatus('saved',`✅ 已保存 ${label}`);
+    }catch(e){ setSaveStatus('error','⚠️ 保存失败'); }
+  },800);
+}
+
+// Merge a slice fetched from the DB back into localStorage
+function applySlice(slice){
+  if(!slice||!Object.keys(slice).length) return;
+  const gk=geoKey(), pk=periodKey();
+  if(slice.targets){ const m=lsGet('targets')||{}; m[gk]=slice.targets; lsSet('targets',m); }
+  if(slice.manual){ const m=lsGet('manual')||{}; m[gk]=m[gk]||{}; m[gk][pk]=slice.manual; lsSet('manual',m); }
+  ['factor_active','factor_targets','custom_factors'].forEach(store=>{
+    if(slice[store]) lsSet(store,{...(lsGet(store)||{}),...slice[store]});
+  });
+  if(slice.todos){ const m=lsGet('todos')||{}; m[`${gk}/${pk}`]=slice.todos; lsSet('todos',m); }
+}
+
+// Pull the latest slice for the current geo+period, then repaint
+async function loadSlice(){
+  if(!apiAvailable) return;
+  const qs = scopeQS();
+  // 本作用域有编辑还没落库 → 别去拉，拉回来的是旧值，applySlice 会盖掉它
+  if(pendingSave===qs) return;
+  try{
+    const r=await apiGet(`/state${qs}`);
+    // 请求飞在路上时用户切了地区/周期，或又改了值 → 丢弃这次响应
+    if(scopeQS()!==qs || pendingSave===qs) return;
+    if(r.found){ applySlice(r.state); paint(); setSaveStatus('saved',`✅ 已加载 ${periodLabel()}`); }
+    else setSaveStatus('saved','🆕 新周期');
+  }catch(e){ setSaveStatus('error','⚠️ 读取失败'); }
+}
+
+// ── Main render + init ─────────────────────────────────────────────────────────
+function paint(){
+  renderGeoNav();
+  renderPeriodBar();
+  renderFunnel();
+  renderFactorPanel();
+  renderSideTable();
+  renderFocus();
+  renderDock();
+}
+// 切地区/切周期都要重取生产数据 —— 取完再 paint 一次，否则先画的是旧数字
+function render(){
+  paint();
+  loadSlice();
+  // 漏斗数、因子值、下发目标并行取，各自到了就重画一次
+  loadProdData().then(paint);
+  loadFactorValues().then(paint);
+  loadTargets().then(paint);
+  loadRollup().then(paint);   // 卷积要遍历全部下级，最慢，单独走
+}
+
+// Probe the API once; fall back to pure localStorage if the server isn't there
+(async()=>{
+  applyDock();   // 先把侧栏形态落地：锁定态会改变可用宽度，要在 paint 之前
+  paint();
+  try{
+    await apiGet('/factor-defs');
+    apiAvailable=true;
+    await loadGeoTree();     // 先拿地区树，S.province 可能被改成库口径
+    await loadProdData();    // 再拿漏斗数（含 badge 文案）
+    await loadFactorValues();// 关键因素真实值
+    await loadTargets();     // 下发目标（全年只读 + 本期预设）
+    await loadRollup();      // 下级卷积目标
+    paint();
+    await loadSlice();
+  }catch(e){
+    apiAvailable=false;
+    setSaveStatus('offline','💾 本地模式');
+  }
+})();
+</script>
+</body>
+</html>
+
+
+
+
+
+

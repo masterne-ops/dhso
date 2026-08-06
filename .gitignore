@@ -1,0 +1,100 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Streamlit / local runtime
+.streamlit/
+
+# Databases — never commit production SQLite
+db/*
+!db/.gitkeep
+*.db
+*.db-shm
+*.db-wal
+db.zip
+
+# Funnel / API runtime data
+funnel/data/*
+!funnel/data/.gitkeep
+funnel/logs/*
+!funnel/logs/.gitkeep
+funnel/venv/
+api/venv/
+
+# Temp / reports / raw uploads
+tmp/*
+!tmp/.gitkeep
+reports/*
+!reports/.gitkeep
+data/*.xlsx
+data/*.xls
+data/*.csv
+!data/.gitkeep
+
+# Backups
+*.bak
+*.bak-*
+*.before-*
+*before-*.bak
+*~
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# V3 sandbox runtime output（保留目录占位）
+v3/sandbox-output/*
+!v3/sandbox-output/.gitkeep
+
+# Secrets / local config
+*.local.json
+*.env
+.env.*
+!.env.example
+auth.json
+**/users.json
+**/jwt-secret
+**/funnel.env
+**/api.env
+**/resolver.env
+**/sessions.json
+
+# Claude / agent local worktrees
+.claude/worktrees/
+
+# Docs binaries / archives（源码说明 md 保留）
+docs/360-health-data-*/
+docs/*.png
+docs/*.docx
+docs/*.html
+docs/*.pdf
+docs/*.xlsx
+
+# Node (if any)
+node_modules/

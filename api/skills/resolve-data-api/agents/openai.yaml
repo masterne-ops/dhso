@@ -1,0 +1,4 @@
+interface:
+  display_name: "Resolve Data API"
+  short_description: "Resolve natural-language requests to fixed data APIs"
+  default_prompt: "Use $resolve-data-api to map this natural-language data request to registered API calls."

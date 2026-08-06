@@ -1,0 +1,35 @@
+[Unit]
+Description=SO Production Data Read-only API
+After=network-online.target so-data-analytics.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=so-data-api
+Group=so-data-api
+WorkingDirectory=/opt/so-data-api
+EnvironmentFile=/etc/so-data-api/api.env
+EnvironmentFile=-/etc/so-data-api/resolver.env
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/opt/so-data-api/venv/bin/uvicorn app.main:app \
+    --host 127.0.0.1 \
+    --port 8601 \
+    --workers 2 \
+    --proxy-headers \
+    --forwarded-allow-ips=127.0.0.1
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/opt/so-data-analytics/db
+ReadWritePaths=/var/lib/so-data-api /var/log/so-data-api
+MemoryMax=1G
+TasksMax=128
+LimitNOFILE=8192
+StandardOutput=append:/var/log/so-data-api/api.log
+StandardError=append:/var/log/so-data-api/api.err
+
+[Install]
+WantedBy=multi-user.target
