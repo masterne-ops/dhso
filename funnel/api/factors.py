@@ -165,9 +165,46 @@ def visit_dealer(conn, city, district, start, end):
     return _visit_count(conn, city, district, start, end, IS_DEALER, "跑动次数（代理商）")
 
 
+# ── 新增开单服务商 ─────────────────────────────────────────────────────────────
+# 业务定义：当前周期内服务商从签约 V0 → 已开单 V1。库里没有等级变更流水
+# （provider_contract 是快照），用安装红包「终身第一次上线」作代理：
+#   本期有 install_redpack 上线，且期前从未上线。
+# 不等价于「当前 服务商等级 = v1」——同期 V0→V2 也会错过；首次上线即破冰。
+# 口径窄于 product_flow SO（用户指定走红包扫码）。
+# 地区取签约表 客户城市/客户区县，全省 = 各市之和。
+NEW_OPEN_LABEL = "新增开单服务商"
+
+
+def new_open_providers(conn, city, district, start, end):
+    """
+    新增开单服务商（a2v1_new_open）：本期首次安装红包上线的签约服务商家数。
+    计数型，0 家是真值（不是无样本）。
+    """
+    gf, gp = _geo_filter(city, district, "p.客户城市", "p.客户区县")
+    row = conn.execute(
+        f"""SELECT COUNT(*) n FROM (
+              SELECT r.上线客户编码
+              FROM install_redpack r
+              JOIN provider_contract p ON p.客户编码 = r.上线客户编码
+              WHERE COALESCE(r.上线客户编码,'') <> ''
+                AND {NOT_PLAQUE_P}{gf}
+                AND date(r.上线时间) <= ?
+              GROUP BY r.上线客户编码
+              HAVING MIN(date(r.上线时间)) >= ?
+            )""",
+        gp + [end, start]).fetchone()
+    n = int(row["n"] or 0)
+    return {
+        "value": n, "num": n, "den": None,
+        "customers": n,
+        "kind": "new_open",
+        "tip": f"本期首次安装红包上线 {n} 家（期前无上线）",
+        "label": NEW_OPEN_LABEL,
+    }
+
+
 # ── 因子注册表 ─────────────────────────────────────────────────────────────────
 # id 与 funnel_factor_defs.id 对应；只有在此注册了取数函数的 auto 因子才算得出值。
-# 设计文档 §7 列了 8 个预置因子，这里逐个补齐，当前只落了首单礼一个。
 FETCHERS: Dict[str, Callable] = {
     "a2t_fo": first_order_gift_rate,
     "a2t_meet": salesman_coupon_rate,
@@ -177,6 +214,7 @@ FETCHERS: Dict[str, Callable] = {
     "a2t_visit": visit_all,
     "a2t_visit_dahua": visit_dahua,
     "a2t_visit_dealer": visit_dealer,
+    "a2v1_new_open": new_open_providers,
 }
 
 # 因子定义（写入 funnel_factor_defs 的种子数据）。
@@ -196,6 +234,8 @@ SEED_DEFS: List[Dict[str, Any]] = [
      "unit": "次", "source": "auto", "display_order": 2},
     {"id": "a2t_visit_dealer", "conv_key": "a2t", "name": "跑动次数（代理商）",
      "unit": "次", "source": "auto", "display_order": 3},
+    {"id": "a2v1_new_open", "conv_key": "a2v1", "name": "新增开单服务商",
+     "unit": "家", "source": "auto", "display_order": 5},
 ]
 
 

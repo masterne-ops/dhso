@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>管辖总览 · 服务商转化漏斗</title>
+<style>
+:root {
+  --blue:#1677ff;--blue-l:#e6f4ff;--blue-d:#0958d9;
+  --green:#52c41a;--green-l:#f6ffed;
+  --yellow:#faad14;--yellow-l:#fffbe6;
+  --red:#ff4d4f;--red-l:#fff2f0;
+  --orange:#fa8c16;--orange-l:#fff7e6;
+  --gray:#8c8c8c;--gray-l:#f5f5f5;--border:#e8e8e8;
+  --text:#141414;--text-s:#595959;--radius:8px;
+  --shadow:0 2px 8px rgba(0,0,0,.08);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+     background:#f0f2f5;color:var(--text);font-size:14px}
+.hdr{background:#fff;position:sticky;top:0;z-index:100;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.hdrTop{display:flex;align-items:center;gap:12px;padding:0 24px;height:46px}
+.hdr h1{font-size:15px;font-weight:600;white-space:nowrap}
+.hdr .sp{flex:1}
+.hdrPeriod{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+           padding:6px 24px 8px;border-top:1px solid var(--border);background:#fafafa}
+.navLink{font-size:12px;color:var(--blue);text-decoration:none;padding:3px 10px;
+         border:1px solid var(--border);border-radius:4px;white-space:nowrap}
+.navLink:hover{background:var(--blue-l);border-color:#91caff}
+.navLink.on{background:var(--blue-l);border-color:#91caff;color:var(--blue-d);font-weight:600}
+.saveStatus{font-size:12px;padding:3px 10px;border-radius:4px;white-space:nowrap}
+.saveStatus.saved{color:var(--green);background:var(--green-l)}
+.saveStatus.saving{color:var(--blue);background:var(--blue-l)}
+.logoutBtn{border:1px solid var(--border);background:#fff;color:var(--text-s);
+           font-size:12px;padding:3px 10px;border-radius:4px;cursor:pointer;
+           white-space:nowrap;display:none}
+.logoutBtn:hover{border-color:var(--red);color:var(--red);background:var(--red-l)}
+.pTabs{display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.pTab{border:none;background:#fff;padding:5px 14px;cursor:pointer;font-size:13px;
+      color:var(--text-s);border-right:1px solid var(--border)}
+.pTab:last-child{border-right:none}
+.pTab.on{background:var(--blue-l);color:var(--blue);font-weight:600}
+.pSelect{border:1px solid var(--border);border-radius:6px;padding:5px 10px;
+         font-size:13px;color:var(--text);background:#fff;cursor:pointer;max-width:220px}
+.pDateRange{font-size:12px;color:var(--text-s);background:var(--gray-l);
+            padding:3px 10px;border-radius:4px;white-space:nowrap}
+.main{max-width:1440px;margin:16px auto;padding:0 24px 32px;
+      display:flex;flex-direction:column;gap:14px}
+.kpiRow{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.kpi{background:#fff;border:1px solid var(--border);border-radius:8px;padding:12px 14px;
+     cursor:pointer;box-shadow:var(--shadow)}
+.kpi:hover,.kpi.on{border-color:#91caff;background:var(--blue-l)}
+.kpi .n{font-size:22px;font-weight:700;line-height:1.2}
+.kpi .l{font-size:12px;color:var(--text-s);margin-top:4px}
+.kpi.warn .n{color:#d46b08}.kpi.danger .n{color:#cf1322}
+.layout{display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:14px;align-items:start}
+.card{background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow)}
+.cHdr{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border)}
+.cTitle{font-weight:600;font-size:14px}
+.cSub{font-size:12px;color:var(--text-s)}
+.toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 16px;
+         border-bottom:1px solid var(--border);background:#fafafa}
+.chip{border:1px solid var(--border);background:#fff;padding:4px 10px;border-radius:14px;
+      font-size:12px;cursor:pointer;color:var(--text-s)}
+.chip.on{background:var(--blue-l);border-color:#91caff;color:var(--blue-d);font-weight:600}
+.search{border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:13px;min-width:140px}
+.tblWrap{overflow:auto;max-height:calc(100vh - 280px)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{position:sticky;top:0;background:#fafafa;text-align:left;padding:8px 10px;
+   font-weight:600;color:var(--text-s);border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid #f0f0f0;white-space:nowrap}
+tr.group td{background:#f5f5f5;font-weight:600;color:var(--text-s);font-size:12px}
+tr.danger{background:#fff2f0}tr.warn{background:#fffbe6}
+tr.scope td:first-child{font-weight:700}
+.unitLink{color:var(--blue);text-decoration:none;font-weight:600}
+.unitLink:hover{text-decoration:underline}
+.subLink{margin-left:8px;font-size:12px;font-weight:400;color:var(--gray);text-decoration:none}
+.subLink:hover{color:var(--blue);text-decoration:underline}
+.rate{display:inline-block;min-width:42px;text-align:right;padding:1px 6px;border-radius:4px}
+.rate.bad{color:#cf1322;background:#fff2f0;font-weight:600}
+.rate.warn{color:#d46b08;background:#fff7e6}
+.rate.ok{color:#389e0d}
+.rate.na{color:#bfbfbf}
+.side{position:sticky;top:110px;max-height:calc(100vh - 130px);overflow:auto}
+.sideEmpty{padding:24px 16px;color:var(--gray);font-size:13px}
+.geoBlk{padding:12px 16px;border-bottom:1px solid var(--border)}
+.geoBlk h3{font-size:13px;margin-bottom:8px}
+.geoBlk h3 a{color:inherit;text-decoration:none}
+.geoBlk h3 a:hover{color:var(--blue)}
+.item{display:flex;gap:8px;align-items:flex-start;margin:6px 0;font-size:13px;line-height:1.45}
+.item input{margin-top:3px;flex-shrink:0}
+.item.q{color:var(--text-s)}
+.item.done span:last-of-type{text-decoration:line-through;color:var(--gray)}
+.item .tag{font-size:11px;color:var(--gray);flex-shrink:0;min-width:32px}
+.item .tag.wk{color:var(--blue);background:var(--blue-l);border-radius:3px;padding:0 4px;min-width:0}
+.notesCard{scroll-margin-top:96px}
+.foldCard > summary.cHdr{cursor:pointer;list-style:none}
+.foldCard > summary.cHdr::-webkit-details-marker,
+.foldCard > summary.cHdr::marker{display:none;content:''}
+.foldCard > summary.cHdr::before{content:'▾';color:var(--gray);font-size:12px;flex-shrink:0}
+.foldCard:not([open]) > summary.cHdr::before{content:'▸'}
+.foldCard:not([open]) > summary.cHdr{border-bottom:none}
+.notesBoard{display:flex;flex-direction:column}
+.noteUnit{border-bottom:1px solid var(--border)}
+.noteUnit:last-child{border-bottom:none}
+.noteUnit > summary{cursor:pointer;list-style:none;display:flex;align-items:center;
+                    gap:8px;padding:12px 20px;font-size:14px;font-weight:600}
+.noteUnit > summary::-webkit-details-marker,
+.noteUnit > summary::marker{display:none;content:''}
+.noteUnit > summary::before{content:'▸';color:var(--gray);font-size:12px;font-weight:400}
+.noteUnit[open] > summary::before{content:'▾'}
+.noteUnit > summary a{color:inherit;text-decoration:none}
+.noteUnit > summary a:hover{color:var(--blue)}
+.noteUnit .noteBody{padding:0 20px 16px}
+.noteBlk{background:#fafafa;border:1px solid var(--border);border-radius:6px;
+         padding:12px 14px;margin:0 0 10px;font-size:14px}
+.noteBlk:last-child{margin-bottom:0}
+.noteBlk .noteMeta{font-size:12px;color:var(--blue);font-weight:600;margin-bottom:6px}
+.mdBody{line-height:1.7;word-break:break-word}
+.mdBody p{margin:0 0 .6em}
+.mdBody p:last-child{margin-bottom:0}
+.mdBody h1,.mdBody h2,.mdBody h3{margin:.8em 0 .4em;line-height:1.35;font-weight:650}
+.mdBody h1:first-child,.mdBody h2:first-child,.mdBody h3:first-child{margin-top:0}
+.mdBody h1{font-size:18px}.mdBody h2{font-size:16px}.mdBody h3{font-size:15px}
+.mdBody ul,.mdBody ol{margin:.3em 0 .6em;padding-left:1.4em}
+.mdBody li{margin:.15em 0}
+.mdBody code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
+             background:#f0f0f0;padding:1px 5px;border-radius:3px}
+.mdBody pre.mdPre{background:#f5f5f5;border:1px solid #eee;border-radius:6px;
+                  padding:10px 12px;overflow:auto;margin:.5em 0}
+.mdBody pre.mdPre code{background:none;padding:0}
+.mdBody a{color:var(--blue);text-decoration:none}
+.mdBody a:hover{text-decoration:underline}
+.mdBody blockquote{margin:.5em 0;padding:4px 10px;border-left:3px solid #d9d9d9;
+                   color:var(--text-s);background:#fafafa}
+.mdBody hr{border:none;border-top:1px solid var(--border);margin:.8em 0}
+.mdBody strong{font-weight:650}
+.doneFold{padding:10px 16px 16px;border-top:1px dashed var(--border);background:#fafafa}
+.doneFold summary{cursor:pointer;font-size:13px;color:var(--text-s);font-weight:600;
+                  list-style:none;display:flex;align-items:center;gap:6px}
+.doneFold summary::-webkit-details-marker{display:none}
+.doneFold summary::before{content:'▸';color:var(--gray)}
+.doneFold[open] summary::before{content:'▾'}
+.doneFold .geoBlk{border-bottom:none;padding:10px 0 0}
+.hint{padding:8px 16px 12px;font-size:12px;color:var(--gray)}
+.empty{padding:40px;text-align:center;color:var(--gray)}
+@media (max-width:960px){
+  .layout{grid-template-columns:1fr}
+  .kpiRow{grid-template-columns:repeat(2,1fr)}
+  .side{position:static;max-height:none}
+}
+</style>
+</head>
+<body>
+<header class="hdr">
+  <div class="hdrTop">
+    <h1>🗺 管辖总览</h1>
+    <a href="/" id="funnelLink" class="navLink">漏斗工作台</a>
+    <a href="/overview" class="navLink on">管辖总览</a>
+    <div class="sp"></div>
+    <span id="whoami" class="saveStatus" style="display:none"></span>
+    <button type="button" id="logoutBtn" class="logoutBtn" onclick="doLogout()">登出</button>
+  </div>
+  <div id="periodBar" class="hdrPeriod"></div>
+</header>
+<div class="main">
+  <div class="kpiRow" id="kpiRow"></div>
+  <div class="layout">
+    <div class="card">
+      <div class="cHdr">
+        <span class="cTitle">单位 × 漏斗转化率</span>
+        <span class="cSub" id="matrixSub">YTD 存量口径 · 点单位名打开漏斗工作页</span>
+      </div>
+      <div class="toolbar" id="toolbar"></div>
+      <div class="tblWrap" id="matrix"></div>
+    </div>
+    <div class="card side">
+      <div class="cHdr">
+        <span class="cTitle">待办 / 问题</span>
+        <span class="cSub">勾选写回切片 · 已完成折在底部</span>
+      </div>
+      <div id="sideList"></div>
+      <div class="hint">改目标、关键因素请点进漏斗工作页。这里不改漏斗数字。</div>
+    </div>
+  </div>
+  <details class="card notesCard foldCard" id="notesCard" open>
+    <summary class="cHdr">
+      <span class="cTitle">💭 思考 / 目标</span>
+      <span class="cSub" id="notesSub">点标题折叠 · 点单位名去漏斗页改</span>
+    </summary>
+    <div class="notesBoard" id="notesBoard"></div>
+  </details>
+</div>
+<script src="/md.js"></script>
+<script>
+const API = '/api/funnel';
+const S = {
+  periodType:'week', periodKey:null, level:null, cityFilter:null,
+  filter:null, q:'',
+};
+let ME = null, DATA = null, CITIES = [];
+let doneFoldOpen = false;
+let notesGeoOpen = {};
+
+function isoWeekOf(date){
+  const d = new Date(date); d.setHours(0,0,0,0);
+  d.setDate(d.getDate() + 3 - (d.getDay()+6)%7);
+  const year = d.getFullYear();
+  const w1 = new Date(year,0,4);
+  w1.setDate(w1.getDate() + 3 - (w1.getDay()+6)%7);
+  return { year, week: 1 + Math.round((d-w1)/(7*86400000)) };
+}
+function isoWeekRange(year, week){
+  const w1 = new Date(year,0,4);
+  w1.setDate(w1.getDate() - (w1.getDay()+6)%7);
+  const start = new Date(w1.getFullYear(),w1.getMonth(),w1.getDate()+(week-1)*7);
+  const end   = new Date(start.getFullYear(),start.getMonth(),start.getDate()+6);
+  const fmt = d => `${d.getMonth()+1}月${d.getDate()}日`;
+  return { label:`${fmt(start)}–${fmt(end)}`, start, end };
+}
+function weekKey(year, week){ return `${year}-W${String(week).padStart(2,'0')}`; }
+function weeksInIsoYear(year){ return isoWeekOf(new Date(year,11,28)).week; }
+function yearOptions(){
+  const y0 = new Date().getFullYear(), out = [];
+  for(let y = y0 - 2; y <= y0 + 3; y++) out.push(y);
+  return out;
+}
+function allWeeks(year){
+  const n = weeksInIsoYear(year), out = [];
+  for(let w = 1; w <= n; w++){
+    out.push({key: weekKey(year, w),
+              label: `W${String(w).padStart(2,'0')} · ${isoWeekRange(year, w).label}`});
+  }
+  return out;
+}
+function allMonths(year){
+  const out = [];
+  for(let m = 1; m <= 12; m++){
+    out.push({key: `${year}-${String(m).padStart(2,'0')}`, label: `${m}月`});
+  }
+  return out;
+}
+function periodOptions(type, year){ return type==='week' ? allWeeks(year) : allMonths(year); }
+function selectedYear(){
+  const m = (S.periodKey||'').match(/^(\d{4})/);
+  return m ? +m[1] : new Date().getFullYear();
+}
+function currentWeekKey(){ const {year,week}=isoWeekOf(new Date()); return weekKey(year,week); }
+function currentMonthKey(){
+  const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+if(!S.periodKey) S.periodKey = currentWeekKey();
+
+(function applyQuery(){
+  const q = new URLSearchParams(location.search);
+  if(q.get('period')){
+    S.periodKey = q.get('period');
+    S.periodType = /W/.test(S.periodKey) ? 'week' : 'month';
+  }
+  if(q.get('level')==='city' || q.get('level')==='district') S.level = q.get('level');
+  if(q.get('city')) S.cityFilter = q.get('city');
+  if(q.get('filter')) S.filter = q.get('filter');
+})();
+
+function esc(s){
+  return String(s??'').replace(/[&<>"']/g, c=>({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+function gotoLogin(){
+  const back = location.pathname + location.search;
+  location.replace('/login?next=' + encodeURIComponent(back));
+}
+function doLogout(){
+  const f = document.createElement('form');
+  f.method = 'POST'; f.action = '/logout';
+  document.body.appendChild(f); f.submit();
+}
+async function apiGet(path){
+  const r = await fetch(API+path);
+  if(r.status===401){ gotoLogin(); throw new Error('未登录'); }
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+async function apiPost(path, body){
+  const r = await fetch(API+path,{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(r.status===401){ gotoLogin(); throw new Error('未登录'); }
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+function syncUrl(){
+  const q = new URLSearchParams();
+  q.set('period', S.periodKey);
+  if(S.level) q.set('level', S.level);
+  if(S.cityFilter) q.set('city', S.cityFilter);
+  if(S.filter) q.set('filter', S.filter);
+  history.replaceState(null, '', location.pathname + '?' + q.toString());
+  const fl = document.getElementById('funnelLink');
+  if(fl) fl.href = '/?period=' + encodeURIComponent(S.periodKey);
+}
+
+function funnelHref(geo){
+  return `/?geo=${encodeURIComponent(geo)}&period=${encodeURIComponent(S.periodKey)}`;
+}
+
+function meCity(){ return (ME && ME.scope!=='*') ? ME.scope : null; }
+
+function renderWho(){
+  const who = document.getElementById('whoami');
+  const logoutBtn = document.getElementById('logoutBtn');
+  if(ME){
+    who.style.display='';
+    who.className = 'saveStatus saved';
+    who.textContent = ME.scope==='*' ? `👤 ${ME.label}（全省）` : `👤 ${ME.label}`;
+    if(logoutBtn) logoutBtn.style.display='inline-block';
+  } else {
+    who.style.display='none';
+    if(logoutBtn) logoutBtn.style.display='none';
+  }
+}
+
+function renderPeriodBar(){
+  const isWeek = S.periodType==='week';
+  const year = selectedYear();
+  const opts = periodOptions(S.periodType, year);
+  const selects = opts.map(o=>`<option value="${o.key}" ${o.key===S.periodKey?'selected':''}>${o.label}</option>`).join('');
+  const years = yearOptions().map(y=>
+    `<option value="${y}" ${y===year?'selected':''}>${y}年</option>`).join('');
+  let rangeBadge = '';
+  if(isWeek){
+    const m=S.periodKey.match(/(\d{4})-W(\d+)/);
+    if(m){ const r=isoWeekRange(+m[1],+m[2]); rangeBadge=`<span class="pDateRange">📅 ${r.label}</span>`; }
+  }
+  const cityOpts = (!meCity() && CITIES.length)
+    ? `<select class="pSelect" onchange="setCityFilter(this.value||null)">
+         <option value="">请选择地市</option>
+         ${CITIES.map(c=>`<option value="${esc(c)}" ${S.cityFilter===c?'selected':''}>${esc(c)}</option>`).join('')}
+       </select>` : '';
+  document.getElementById('periodBar').innerHTML=`
+    <div class="pTabs">
+      <button class="pTab ${isWeek?'on':''}" onclick="setPeriodType('week')">按周</button>
+      <button class="pTab ${!isWeek?'on':''}" onclick="setPeriodType('month')">按月</button>
+    </div>
+    <select class="pSelect" style="min-width:88px" onchange="onYearSelect(this.value)">${years}</select>
+    <select class="pSelect" onchange="onPeriodSelect(this.value)">${selects}</select>
+    ${rangeBadge}
+    <div class="pTabs">
+      <button class="pTab ${S.level==='city'?'on':''}" onclick="setLevel('city')">地市</button>
+      <button class="pTab ${S.level==='district'?'on':''}" onclick="setLevel('district')">区县</button>
+    </div>
+    ${S.level==='district' ? cityOpts : ''}
+  `;
+}
+
+function setPeriodType(t){
+  S.periodType=t;
+  const year = selectedYear();
+  const thisYear = new Date().getFullYear();
+  S.periodKey = (year===thisYear)
+    ? (t==='week' ? currentWeekKey() : currentMonthKey())
+    : periodOptions(t, year)[0].key;
+  load();
+}
+function onYearSelect(y){
+  const year = +y;
+  const cur = S.periodKey.match(/W(\d+)$/);
+  if(S.periodType==='week' && cur){
+    S.periodKey = weekKey(year, Math.min(+cur[1], weeksInIsoYear(year)));
+  }else if(S.periodType==='month'){
+    S.periodKey = `${year}-${S.periodKey.split('-')[1]}`;
+  }else{
+    S.periodKey = periodOptions(S.periodType, year)[0].key;
+  }
+  load();
+}
+function onPeriodSelect(key){ S.periodKey=key; load(); }
+function setLevel(lv){
+  S.level = lv;
+  if(lv==='city') S.cityFilter = null;
+  load();
+}
+function setCityFilter(v){ S.cityFilter = v || null; load(); }
+function drillCity(city){
+  S.level = 'district';
+  S.cityFilter = city;
+  load();
+}
+function adminNeedsCity(){
+  return S.level==='district' && !meCity() && !S.cityFilter;
+}
+function setFilter(k){
+  S.filter = (S.filter===k) ? null : k;
+  paint();
+  syncUrl();
+  if(S.filter==='notes'){
+    const el = document.getElementById('notesCard');
+    if(el){ el.open = true; el.scrollIntoView({behavior:'smooth', block:'start'}); }
+  }
+}
+function setSearch(v){ S.q = v; paint(); }
+
+function rateClass(v){
+  if(v==null) return 'na';
+  if(v<70) return 'bad';
+  if(v<85) return 'warn';
+  return 'ok';
+}
+function fmtRate(v){ return v==null ? '—' : v.toFixed(v%1 ? 1 : 0) + '%'; }
+function rateCell(v){ return `<span class="rate ${rateClass(v)}">${fmtRate(v)}</span>`; }
+
+function visibleUnits(){
+  let units = (DATA && DATA.units) || [];
+  if(S.q){
+    const q = S.q.trim();
+    units = units.filter(u => (u.name||'').includes(q) || (u.city||'').includes(q));
+  }
+  if(S.filter==='todos') units = units.filter(u=>u.todo_open>0);
+  else if(S.filter==='questions') units = units.filter(u=>u.question_open>0);
+  else if(S.filter==='notes') units = units.filter(u=>(u.note_count||0)>0);
+  else if(S.filter==='weak') units = units.filter(u=>u.weak_count>0);
+  else if(S.filter==='gap') units = units.filter(u=>u.target_gap);
+  else if(S.filter==='anomaly') units = units.filter(u=>
+    u.weak_count>0 || u.target_gap || u.todo_open>0 || u.question_open>0);
+  return units;
+}
+
+function rowTone(u){
+  if(u.weak_count>=2 || (u.weak_count>0 && u.todo_open>0)) return 'danger';
+  if(u.weak_count>0 || u.question_open>0 || u.target_gap) return 'warn';
+  return '';
+}
+
+function rowHtml(u){
+  const r = u.rates||{};
+  const worst = u.worst ? `${esc(u.worst.label)} ${fmtRate(u.worst.rate)}` : '—';
+  const tip = `授权 ${u.ytd?.authorized??0} / 总量 ${u.ytd?.pool??0}`;
+  const scope = (u.role==='province' || (u.role==='city' && !u.district)) ? ' scope' : '';
+  let name = `<a class="unitLink" href="${funnelHref(u.geo_key)}">${esc(u.name)}</a>`;
+  if(S.level==='city' && u.role==='city' && u.city){
+    name = `<a class="unitLink" href="#district" onclick="event.preventDefault();drillCity('${esc(u.city)}')">${esc(u.name)}</a>`
+      + `<a class="subLink" href="${funnelHref(u.geo_key)}">漏斗</a>`;
+  }
+  return `<tr class="${rowTone(u)}${scope}" title="${esc(tip)}">
+    <td>${name}</td>
+    <td>${rateCell(r.p2a)}</td>
+    <td>${rateCell(r.a2v1)}</td>
+    <td>${rateCell(r.a2t)}</td>
+    <td>${rateCell(r.t2v)}</td>
+    <td>${u.weak_count||0}</td>
+    <td>${esc(worst)}</td>
+    <td>${u.todo_open||0}</td>
+    <td>${u.question_open||0}</td>
+    <td>${u.note_count||0}</td>
+  </tr>`;
+}
+
+function renderKpi(){
+  const k = (DATA && DATA.kpi) || {};
+  const cell = (key, n, label, tone) =>
+    `<div class="kpi ${tone||''} ${S.filter===key?'on':''}" onclick="setFilter('${key}')">
+       <div class="n">${n??0}</div><div class="l">${label}</div></div>`;
+  document.getElementById('kpiRow').innerHTML =
+    cell('todos', k.open_todos, '未完成待办', 'warn') +
+    cell('questions', k.open_questions, '未关闭问题', 'warn') +
+    cell('notes', k.with_notes, '有思考/目标', '') +
+    cell('weak', k.weak_units, '转化短板单位', 'danger') +
+    cell('gap', k.target_gap_units, '目标缺口单位', '');
+}
+
+function renderToolbar(){
+  document.getElementById('toolbar').innerHTML = `
+    <button class="chip ${S.filter==='anomaly'?'on':''}" onclick="setFilter('anomaly')">只看异常</button>
+    <input class="search" placeholder="搜索单位" value="${esc(S.q)}"
+           oninput="setSearch(this.value)">
+    <span class="cSub">${(DATA && DATA.unit_count) || 0} 个单位 · ${(DATA && DATA.source)==='prod'?'生产库':'无生产数据'}</span>
+  `;
+}
+
+function renderMatrix(){
+  const units = visibleUnits();
+  if(!DATA){
+    document.getElementById('matrix').innerHTML = `<div class="empty">加载中…</div>`;
+    return;
+  }
+  if(DATA.source!=='prod'){
+    document.getElementById('matrix').innerHTML = `<div class="empty">生产库不可用，总览没有漏斗数字。</div>`;
+    return;
+  }
+  if(adminNeedsCity()){
+    document.getElementById('matrix').innerHTML =
+      `<div class="empty">请选择地市，查看该市的区县总览（全市 + 各区县，与地市账号相同）。也可在地市视图点地市名进入。</div>`;
+    document.getElementById('matrixSub').textContent =
+      '管理员先选地市，再看该市区县';
+    return;
+  }
+  if(!units.length){
+    document.getElementById('matrix').innerHTML = `<div class="empty">没有符合筛选的单位</div>`;
+    return;
+  }
+  let body = '';
+  if(S.level==='district'){
+    let last = null;
+    for(const u of units){
+      if(u.role==='province' || (u.role==='city' && !u.district)){
+        body += rowHtml(u);
+        continue;
+      }
+      if(u.city!==last){
+        last = u.city;
+        body += `<tr class="group"><td colspan="10">${esc(u.city)}</td></tr>`;
+      }
+      body += rowHtml(u);
+    }
+  } else {
+    body = units.map(rowHtml).join('');
+  }
+  document.getElementById('matrix').innerHTML = `
+    <table>
+      <thead><tr>
+        <th>单位</th><th>授权</th><th>开单 V1</th><th>激活 V2</th><th>高级 V3</th>
+        <th>短板</th><th>最差一跳</th><th>待办</th><th>问题</th><th>思考</th>
+      </tr></thead>
+      <tbody>${body}</tbody>
+    </table>`;
+  document.getElementById('matrixSub').textContent = (S.level==='city' && !meCity())
+    ? '点地市名进入该市区县总览 · 点「漏斗」打开工作页 · 红格 <70%'
+    : 'YTD 存量口径 · 红格 <70% · 点单位名打开漏斗工作页';
+}
+
+function unitTitle(u){
+  if(u.role==='province') return '全省';
+  if(u.role==='city' && !u.district) return `${u.city||u.name} · 全市`;
+  return u.district ? `${u.city} · ${u.name}` : (u.name||'');
+}
+function itemHtml(geo, kind, t){
+  const done = !!t.done;
+  const pk = t.period_key || S.periodKey;
+  const pl = t.period_label && t.period_label!=='月度' ? t.period_label : '';
+  return `<label class="item ${kind==='question'?'q':''} ${done?'done':''}">
+    <input type="checkbox" ${done?'checked':''}
+           onchange="toggleItem('${esc(geo)}','${kind}',${t.index},this.checked,this,'${esc(pk)}')"
+           data-text="${esc(t.text)}">
+    <span class="tag">${kind==='todo'?'待办':'问题'}</span>
+    ${pl?`<span class="tag wk">${esc(pl)}</span>`:''}
+    <span>${esc(t.text)}</span>
+  </label>`;
+}
+
+function noteHtml(n){
+  const pl = n.period_label && n.period_label!=='月度' ? n.period_label : '';
+  const body = (typeof mdHtml==='function') ? mdHtml(n.text) : esc(n.text).replace(/\n/g,'<br>');
+  return `<div class="noteBlk">${pl?`<div class="noteMeta">${esc(pl)}</div>`:''}<div class="mdBody">${body}</div></div>`;
+}
+
+function renderSide(){
+  const prev = document.getElementById('doneFold');
+  if(prev) doneFoldOpen = prev.open;
+  const units = visibleUnits();
+  const openUnits = units.filter(u => u.todo_open || u.question_open);
+  const doneByGeo = [];
+  const seen = {};
+  for(const u of units){
+    const doneTodos = (u.todos||[]).filter(t=>t.done);
+    const doneQs = (u.questions||[]).filter(t=>t.done);
+    if(!doneTodos.length && !doneQs.length) continue;
+    const k = u.geo_key;
+    if(seen[k]==null){ seen[k]=doneByGeo.length; doneByGeo.push({u, todos:doneTodos, questions:doneQs}); }
+  }
+  const doneN = doneByGeo.reduce((n,g)=>n+g.todos.length+g.questions.length, 0);
+  if(!openUnits.length && !doneN){
+    document.getElementById('sideList').innerHTML =
+      `<div class="sideEmpty">当前筛选下没有待办或问题</div>`;
+    return;
+  }
+  const html = openUnits.map(u=>{
+    const todos = (u.todos||[]).filter(t=>!t.done).map(t=>itemHtml(u.geo_key,'todo',t)).join('');
+    const qs = (u.questions||[]).filter(t=>!t.done).map(t=>itemHtml(u.geo_key,'question',t)).join('');
+    return `<div class="geoBlk">
+      <h3><a href="${funnelHref(u.geo_key)}">${esc(unitTitle(u))}</a>
+        · ${u.todo_open} 待办 / ${u.question_open} 问题</h3>
+      ${todos}${qs}
+    </div>`;
+  }).join('');
+  const doneHtml = doneN ? `<details class="doneFold" id="doneFold"${doneFoldOpen?' open':''}>
+      <summary>已完成 ${doneN} 项</summary>
+      ${doneByGeo.map(g=>`<div class="geoBlk">
+        <h3><a href="${funnelHref(g.u.geo_key)}">${esc(unitTitle(g.u))}</a></h3>
+        ${g.todos.map(t=>itemHtml(g.u.geo_key,'todo',t)).join('')}
+        ${g.questions.map(t=>itemHtml(g.u.geo_key,'question',t)).join('')}
+      </div>`).join('')}
+    </details>` : '';
+  document.getElementById('sideList').innerHTML = html + doneHtml;
+}
+
+function noteUnits(){
+  let units = (DATA && DATA.units) || [];
+  if(S.q){
+    const q = S.q.trim();
+    units = units.filter(u => (u.name||'').includes(q) || (u.city||'').includes(q));
+  }
+  return units.filter(u => (u.note_count||0)>0);
+}
+
+function rememberNoteFolds(){
+  document.querySelectorAll('#notesBoard details.noteUnit').forEach(el=>{
+    if(el.dataset.geo) notesGeoOpen[el.dataset.geo] = el.open;
+  });
+}
+
+function renderNotes(){
+  rememberNoteFolds();
+  const board = document.getElementById('notesBoard');
+  const sub = document.getElementById('notesSub');
+  const units = noteUnits();
+  sub.textContent = units.length
+    ? `${units.length} 个单位已记 · 点标题折叠 · 点单位名去漏斗页改`
+    : '点标题折叠 · 点单位名去漏斗页改';
+  if(!DATA){
+    board.innerHTML = `<div class="sideEmpty">加载中…</div>`;
+    return;
+  }
+  if(!units.length){
+    board.innerHTML = `<div class="sideEmpty">本周期还没有思考/目标。到漏斗工作页底部记录。</div>`;
+    return;
+  }
+  board.innerHTML = units.map(u=>{
+    const n = (u.notes||[]).length;
+    const opened = (u.geo_key in notesGeoOpen)
+      ? notesGeoOpen[u.geo_key]
+      : (u.role==='province' || (u.role==='city' && !u.district));
+    return `<details class="noteUnit" data-geo="${esc(u.geo_key)}"${opened?' open':''}>
+      <summary>
+        <a href="${funnelHref(u.geo_key)}" onclick="event.stopPropagation()">${esc(unitTitle(u))}</a>
+        <span class="cSub">· ${n} 段</span>
+      </summary>
+      <div class="noteBody">${(u.notes||[]).map(noteHtml).join('')}</div>
+    </details>`;
+  }).join('');
+}
+
+async function toggleItem(geo, kind, index, done, el, period){
+  const text = el ? el.getAttribute('data-text') : undefined;
+  const pk = period || S.periodKey;
+  el && (el.disabled = true);
+  try{
+    await apiPost(
+      `/overview/item?geo_key=${encodeURIComponent(geo)}&period_key=${encodeURIComponent(pk)}`,
+      {kind, index, done, text});
+    await load(false);
+  }catch(e){
+    if(el) el.checked = !done;
+    alert('勾选失败，请刷新后重试');
+  }
+}
+
+function paint(){
+  renderWho();
+  renderPeriodBar();
+  renderKpi();
+  renderToolbar();
+  renderMatrix();
+  renderSide();
+  renderNotes();
+  syncUrl();
+}
+
+async function load(repaintBar=true){
+  if(repaintBar) renderPeriodBar();
+  if(adminNeedsCity()){
+    DATA = {
+      source: 'prod', units: [], unit_count: 0, user: ME,
+      kpi: {open_todos:0, open_questions:0, with_notes:0,
+            weak_units:0, target_gap_units:0},
+    };
+    paint();
+    return;
+  }
+  const qs = new URLSearchParams({period_key: S.periodKey, level: S.level || 'city'});
+  if(S.cityFilter && S.level==='district') qs.set('city', S.cityFilter);
+  DATA = await apiGet('/overview?' + qs.toString());
+  if(DATA.user) ME = DATA.user;
+  paint();
+}
+
+(async()=>{
+  try{
+    const g = await apiGet('/geo');
+    if(g.user) ME = g.user;
+    CITIES = ((g.geo||{}).cities||[]).map(c=>c.city);
+    if(!S.level) S.level = meCity() ? 'district' : 'city';
+    if(meCity()) S.cityFilter = null;
+    renderWho();
+    await load();
+  }catch(e){
+    document.getElementById('matrix').innerHTML =
+      `<div class="empty">加载失败：${esc(e.message||e)}</div>`;
+  }
+})();
+</script>
+</body>
+</html>

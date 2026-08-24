@@ -122,6 +122,111 @@ def list_slices(geo_key: Optional[str] = None,
     return [dict(r) for r in rows]
 
 
+def list_states_for_period(period_key: str) -> Dict[str, Dict[str, Any]]:
+    """
+    某周期全部切片正文，一次读出。总览页要按地区挂待办/手填目标，
+    不能对每个单位再打一遍 /state。
+    返回 {geo_key: {"period_type": ..., "state": {...}}}。
+    JSON 坏掉的行跳过，不让一张脏切片把整页打挂。
+    """
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT geo_key, period_type, state_json FROM funnel_state "
+            "WHERE period_key=?",
+            (period_key,)
+        ).fetchall()
+    out: Dict[str, Dict[str, Any]] = {}
+    for r in rows:
+        try:
+            blob = json.loads(r["state_json"])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(blob, dict):
+            continue
+        out[r["geo_key"]] = {"period_type": r["period_type"], "state": blob}
+    return out
+
+
+def list_states_for_period_keys(period_keys: List[str]
+                                ) -> Dict[str, Dict[str, Dict[str, Any]]]:
+    """
+    多个周期一次读出。月度总览要把当月各周切片卷进来。
+    返回 {geo_key: {period_key: state}}。
+    """
+    keys = [k for k in (period_keys or []) if k]
+    if not keys:
+        return {}
+    qs = ",".join("?" * len(keys))
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"SELECT geo_key, period_key, state_json FROM funnel_state "
+            f"WHERE period_key IN ({qs})",
+            keys
+        ).fetchall()
+    out: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    for r in rows:
+        try:
+            blob = json.loads(r["state_json"])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(blob, dict):
+            continue
+        out.setdefault(r["geo_key"], {})[r["period_key"]] = blob
+    return out
+
+
+def list_all_states() -> List[Dict[str, Any]]:
+    """
+    全库切片正文（含 updated_at）。指标库收获各地 custom_factors 用。
+    JSON 坏掉的行跳过。
+    """
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT geo_key, period_key, period_type, updated_at, state_json "
+            "FROM funnel_state"
+        ).fetchall()
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        try:
+            blob = json.loads(r["state_json"])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(blob, dict):
+            continue
+        out.append({
+            "geo_key": r["geo_key"],
+            "period_key": r["period_key"],
+            "period_type": r["period_type"],
+            "updated_at": r["updated_at"],
+            "state": blob,
+        })
+    return out
+
+
+def list_states_for_geo_periods(geo_key: str, period_keys: List[str]
+                                ) -> Dict[str, Dict[str, Any]]:
+    """某地区多个周期的切片，{period_key: state}。"""
+    keys = [k for k in (period_keys or []) if k]
+    if not keys:
+        return {}
+    qs = ",".join("?" * len(keys))
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"SELECT period_key, state_json FROM funnel_state "
+            f"WHERE geo_key=? AND period_key IN ({qs})",
+            [geo_key, *keys]
+        ).fetchall()
+    out: Dict[str, Dict[str, Any]] = {}
+    for r in rows:
+        try:
+            blob = json.loads(r["state_json"])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(blob, dict):
+            out[r["period_key"]] = blob
+    return out
+
+
 # ── Factor-def helpers ─────────────────────────────────────────────────────────
 
 def seed_factor_defs(defs: List[Dict[str, Any]]):

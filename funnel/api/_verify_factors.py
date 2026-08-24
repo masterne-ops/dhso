@@ -42,6 +42,20 @@ GRANTS = [
     ("K11", "C99", "首单礼红包券", "已兑换", "2026-07-10"),
 ]
 
+# 上线客户编码, 上线时间 —— 新增开单 = 终身第一次上线落在本期
+REDPACKS = [
+    ("C1", "2026-06-15 10:00:00"),   # 6 月首次；7 月再上线不算新增
+    ("C1", "2026-07-03 09:00:00"),
+    ("C1", "2026-07-31 23:30:00"),
+    ("C2", "2026-07-05 11:00:00"),   # 7 月首次 · 西湖
+    ("C2", "2026-07-20 11:00:00"),   # 同店二次，去重后仍 1 家
+    ("C3", "2026-07-08 12:00:00"),   # 7 月首次 · 余杭
+    ("C4", "2026-07-20 16:00:00"),   # 7 月首次 · 海曙
+    ("C5", "2026-07-09 10:00:00"),   # 授牌：排除
+    ("C99", "2026-07-10 10:00:00"),  # join 不上签约表：排除
+    ("", "2026-07-11 10:00:00"),     # 空编码：排除
+]
+
 # 客户编码, 拜访客户城市, 拜访客户区县, 打卡人姓名, 打卡人所属公司, 活动创建时间, 拜访时间
 # 打卡人所属公司 空 = 🏢 大华分销经理；非空 = 🏪 代理商业务员
 VISITS = [
@@ -84,6 +98,8 @@ def build():
               "拜访客户区县 TEXT,打卡人姓名 TEXT,打卡人所属公司 TEXT,"
               "活动创建时间 TEXT,拜访时间 TEXT)")
     c.executemany("INSERT INTO visit_record VALUES(?,?,?,?,?,?,?)", VISITS)
+    c.execute("CREATE TABLE install_redpack(上线客户编码 TEXT,上线时间 TEXT)")
+    c.executemany("INSERT INTO install_redpack VALUES(?,?)", REDPACKS)
     # ── 下发目标：地市级 12 行的缩微版（浙江合计 + 2 市）。
     # 「宁波」故意不带「市」，验 _target_row 的去尾重试。
     c.execute("CREATE TABLE provider_target(年度 INTEGER,地市 TEXT,"
@@ -228,10 +244,31 @@ def main():
     ck("跑动 0 次返回 0 而非 None（没跑就是真没跑）",
        f.compute("a2t_visit", None, None, "2026-09-01", "2026-09-30")["value"], 0)
 
+    print("\n── 新增开单服务商 a2v1_new_open（终身首次红包上线）──")
+    # 7 月首次：C2 西湖 + C3 余杭 + C4 海曙 = 3。
+    # C1 6 月已上过、C5 授牌、C99 无签约、空编码 都不计。C2 两行去重为 1 家。
+    n = f.compute("a2v1_new_open", None, None, *JUL)
+    ck("全省 7 月 3 家", n["value"], 3)
+    ck("计数型 den 为 None", n["den"], None)
+    ck("单位家（customers == value）", n["customers"], 3)
+    ck("杭州 2 家（西湖 C2 + 余杭 C3）",
+       f.compute("a2v1_new_open", "杭州市", None, *JUL)["value"], 2)
+    ck("西湖 1 家", f.compute("a2v1_new_open", "杭州市", "西湖区", *JUL)["value"], 1)
+    ck("余杭 1 家", f.compute("a2v1_new_open", "杭州市", "余杭区", *JUL)["value"], 1)
+    ck("宁波 1 家", f.compute("a2v1_new_open", "宁波市", None, *JUL)["value"], 1)
+    hz_n = f.compute("a2v1_new_open", "杭州市", None, *JUL)["value"]
+    nb_n = f.compute("a2v1_new_open", "宁波市", None, *JUL)["value"]
+    ck("各市之和 == 全省", hz_n + nb_n, n["value"])
+    ck("6 月只有 C1 一家新开单",
+       f.compute("a2v1_new_open", None, None, "2026-06-01", "2026-06-30")["value"], 1)
+    ck("空周期返回 0 而非 None（没新开就是 0 家）",
+       f.compute("a2v1_new_open", None, None, "2026-09-01", "2026-09-30")["value"], 0)
+
     print("\n── compute_all / 未注册因子 ──")
     allv = f.compute_all(None, None, *JUL)
     ck("含全部已注册因子", sorted(allv.keys()),
-       ["a2t_fo", "a2t_meet", "a2t_visit", "a2t_visit_dahua", "a2t_visit_dealer"])
+       ["a2t_fo", "a2t_meet", "a2t_visit", "a2t_visit_dahua", "a2t_visit_dealer",
+        "a2v1_new_open"])
     ck("未注册因子返回 None", f.compute("a2t_pa", None, None, *JUL), None)
 
     print("\n── 券种/状态诊断 ──")

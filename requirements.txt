@@ -1,7 +1,0 @@
-streamlit>=1.30
-pandas>=2.0
-numpy>=1.24
-openpyxl>=3.1
-matplotlib>=3.7
-openai>=1.50  # LLM 调用（兼容 Kimi / 通义千问 / 豆包 等）
-python-docx>=1.0  # 解析 Word 会议纪要

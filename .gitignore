@@ -6,57 +6,29 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
-*.egg
+.eggs/
+dist/
+build/
+wheels/
 
-# Streamlit / local runtime
-.streamlit/
-
-# Databases — never commit production SQLite
-db/*
-!db/.gitkeep
-*.db
-*.db-shm
-*.db-wal
-db.zip
-
-# Funnel / API runtime data
+# Funnel runtime — never commit local DB / logs / secrets
 funnel/data/*
 !funnel/data/.gitkeep
 funnel/logs/*
 !funnel/logs/.gitkeep
 funnel/venv/
-api/venv/
+funnel/.venv/
+**/funnel.env
+**/users.json
+**/session.key
+**/sessions.json
 
-# Temp / reports / raw uploads
-tmp/*
-!tmp/.gitkeep
-reports/*
-!reports/.gitkeep
-data/*.xlsx
-data/*.xls
-data/*.csv
-!data/.gitkeep
-
-# Backups
-*.bak
-*.bak-*
-*.before-*
-*before-*.bak
-*~
+# Shared production SQLite must not land in this repo
+*.db
+*.db-shm
+*.db-wal
+db.zip
 
 # IDE / OS
 .vscode/
@@ -64,37 +36,12 @@ data/*.csv
 .DS_Store
 Thumbs.db
 
-# Logs
+# Logs / env
 *.log
-logs/
-
-# V3 sandbox runtime output（保留目录占位）
-v3/sandbox-output/*
-!v3/sandbox-output/.gitkeep
-
-# Secrets / local config
-*.local.json
 *.env
 .env.*
 !.env.example
-auth.json
-**/users.json
-**/jwt-secret
-**/funnel.env
-**/api.env
-**/resolver.env
-**/sessions.json
+*.local.json
 
 # Claude / agent local worktrees
 .claude/worktrees/
-
-# Docs binaries / archives（源码说明 md 保留）
-docs/360-health-data-*/
-docs/*.png
-docs/*.docx
-docs/*.html
-docs/*.pdf
-docs/*.xlsx
-
-# Node (if any)
-node_modules/

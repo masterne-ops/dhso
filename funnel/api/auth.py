@@ -1,17 +1,27 @@
 """
-HTTP Basic auth gate + 登录用户识别。
+登录闸门 + 登录用户识别。
 
-两种模式，按存在与否自动选：
+两种账号来源，按存在与否自动选：
 
 1. **多账号**（`/etc/so-funnel/users.json` 存在且非空）—— 管理员 + 11 个地市账号，
    每个账号带地区 scope。认证通过后把 `User` 挂到 `request.state.user`，
    路由层用 `require_geo()` 做地区级授权。
 2. **单账号**（只设了 `FUNNEL_USER`/`FUNNEL_PASS`）—— 老行为，等同管理员。
-   本地开发两者都不设时中间件是 no-op。
+   本地开发两者都不设时不挂闸门。
 
-⚠️ 仍是**明文 HTTP**（8443 端口无 TLS）。Basic 凭证在链路上可被嗅探，
-这一点没变，地区授权解决的是"登录后能改谁的数据"，不是传输安全。
-要对外扩大范围仍需先上 nginx + TLS。
+## 两条认证通道
+
+**浏览器走表单 + 会话 cookie**（`session.py`）。以前用 HTTP Basic，登出做不干净：
+浏览器缓存凭证并自动重发，「登出后点重新登录」会被静默登回旧账号，而靠换 realm
+逼出登录框又会让密码管理器丢掉已保存的条目。表单登录把会话生命周期交回服务端，
+登出/重登/记住密码/换账号四件事互不打架。
+
+**脚本走 HTTP Basic**（curl、部署健康检查、`_verify_*.py`）。只对非浏览器请求
+生效——浏览器一律带 `Sec-Fetch-*` 头，据此识别。这条限制是必须的：浏览器里
+可能还残留着旧的 Basic 缓存，若照单全收，登出又会被它顶回来。
+
+⚠️ 仍是**明文 HTTP**（8443 端口无 TLS），cookie 和 Basic 凭证在链路上都可被嗅探。
+要对外扩大范围仍需先上 nginx + TLS（届时给 cookie 加 Secure）。
 """
 from __future__ import annotations
 
@@ -23,12 +33,16 @@ import time
 from typing import Dict, Optional, Tuple
 
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse, Response
+from starlette.requests import Request
+from starlette.responses import JSONResponse, RedirectResponse, Response
 
+from . import session
 from .users import User, hash_password, load_users, verify_password
 
-# realm must stay ASCII — HTTP headers are latin-1 encoded, so a Chinese realm
-# raises UnicodeEncodeError when the response is built.
+LOGIN_PATH = "/login"
+LOGOUT_PATH = "/logout"
+_PUBLIC_PATHS = frozenset({LOGIN_PATH, LOGOUT_PATH, "/favicon.ico"})
+
 CHALLENGE = {"WWW-Authenticate": 'Basic realm="SO Funnel", charset="UTF-8"'}
 
 # PBKDF2 24 万次迭代 ≈ 60~100ms。页面一次加载会并发 5+ 个接口，每个都重算一遍
@@ -70,11 +84,6 @@ def _cache_put(user: str, password: str) -> None:
     _VERIFY_CACHE[_cache_key(user, password)] = time.monotonic() + _VERIFY_TTL
 
 
-def _deny() -> Response:
-    return JSONResponse({"detail": "Unauthorized"}, status_code=401,
-                        headers=CHALLENGE)
-
-
 def _parse_basic(header: str) -> Optional[Tuple[str, str]]:
     scheme, _, token = header.partition(" ")
     if scheme.lower() != "basic" or not token:
@@ -87,78 +96,153 @@ def _parse_basic(header: str) -> Optional[Tuple[str, str]]:
     return (user, password) if sep else None
 
 
-class BasicAuthMiddleware(BaseHTTPMiddleware):
-    """
-    单账号模式（向后兼容）。认证通过即视为管理员，不做地区限制。
-    """
+class AuthGate:
+    """账号表 + 校验。多账号与单账号两种来源在这里被抹平成同一套接口。"""
 
-    def __init__(self, app, user: str, password: str):
-        super().__init__(app)
-        self._user = user
-        self._password = password
-        self._admin = User(user, "*", user, {})
-
-    async def dispatch(self, request, call_next):
-        creds = _parse_basic(request.headers.get("authorization", ""))
-        if creds is None:
-            return _deny()
-        user, password = creds
-        # compare_digest on both halves, and evaluate both before returning,
-        # so the check is not short-circuited on a wrong username.
-        user_ok = secrets.compare_digest(user, self._user)
-        pass_ok = secrets.compare_digest(password, self._password)
-        if not (user_ok and pass_ok):
-            return _deny()
-        request.state.user = self._admin
-        return await call_next(request)
-
-
-class MultiUserAuthMiddleware(BaseHTTPMiddleware):
-    """
-    多账号模式。认证通过后把 User 挂到 request.state.user，供路由做地区授权。
-
-    用户表**每次请求都重读吗？** 不。启动时读一次，缓存在内存里；改了
-    users.json 要 `systemctl restart so-funnel` 生效。这样每个请求少一次磁盘 IO，
-    代价是加账号要重启——加账号是低频运维动作，划算。
-    """
-
-    def __init__(self, app, users: Dict[str, User]):
-        super().__init__(app)
-        self._users = users
+    def __init__(self, users: Optional[Dict[str, User]] = None,
+                 single: Optional[Tuple[str, str]] = None):
+        self._users = users or {}
+        self._single = single
+        if single:
+            name, _ = single
+            self._users = {name: User(name, "*", name, {})}
         # 用户名不存在时也要走一遍 KDF，否则"响应快 = 用户名不存在"，
         # 等于白送一个用户名枚举口子
         self._dummy = hash_password("x" * 24, iters=1000)
 
-    async def dispatch(self, request, call_next):
-        creds = _parse_basic(request.headers.get("authorization", ""))
-        if creds is None:
-            return _deny()
-        name, password = creds
+    def get(self, name: str) -> Optional[User]:
+        return self._users.get(name)
+
+    def authenticate(self, name: str, password: str) -> Optional[User]:
+        if self._single:
+            want_name, want_pw = self._single
+            name_ok = secrets.compare_digest(name, want_name)
+            pw_ok = secrets.compare_digest(password, want_pw)
+            return self._users[want_name] if (name_ok and pw_ok) else None
         u = self._users.get(name)
         if u is None:
             verify_password(password, self._dummy)   # 拖平时序
-            return _deny()
+            return None
         if not (_cache_ok(name, password) or verify_password(password, u.rec)):
-            return _deny()
+            return None
         _cache_put(name, password)
-        request.state.user = u
+        return u
+
+
+GATE: Optional[AuthGate] = None
+
+
+def gate() -> Optional[AuthGate]:
+    return GATE
+
+
+# ── cookie ───────────────────────────────────────────────
+
+def set_session_cookie(response: Response, name: str) -> None:
+    response.set_cookie(
+        session.COOKIE_NAME,
+        session.issue(name),
+        max_age=session.TTL_SECONDS,
+        path="/",
+        httponly=True,
+        samesite="lax",
+    )
+
+
+def clear_session_cookie(response: Response) -> None:
+    response.delete_cookie(session.COOKIE_NAME, path="/")
+    # 早期版本残留的 cookie，一并清掉免得干扰
+    for stale in ("funnel_reauth", "funnel_realm"):
+        response.delete_cookie(stale, path="/")
+
+
+# ── 请求分类 ──────────────────────────────────────────────
+
+def _is_browser(request: Request) -> bool:
+    """浏览器一律带 Sec-Fetch-*；curl / urllib / TestClient 不带。"""
+    return any(h in request.headers for h in
+               ("sec-fetch-mode", "sec-fetch-site", "sec-fetch-dest"))
+
+
+def _wants_html(request: Request) -> bool:
+    if request.method not in ("GET", "HEAD"):
+        return False
+    if request.headers.get("sec-fetch-mode") == "navigate":
+        return True
+    if request.url.path.startswith("/api/"):
+        return False
+    return "text/html" in request.headers.get("accept", "")
+
+
+def _login_redirect(request: Request) -> Response:
+    nxt = request.url.path
+    if request.url.query:
+        nxt = f"{nxt}?{request.url.query}"
+    from urllib.parse import quote
+    resp = RedirectResponse(f"{LOGIN_PATH}?next={quote(nxt, safe='')}",
+                            status_code=303)
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+def _deny(request: Request) -> Response:
+    """
+    未登录。浏览器请求**绝不能**带 WWW-Authenticate —— 那会弹出原生 Basic 弹窗，
+    正是我们要摆脱的东西。脚本请求带上，方便 curl。
+    """
+    headers = {"Cache-Control": "no-store"}
+    if not _is_browser(request):
+        headers.update(CHALLENGE)
+    return JSONResponse({"detail": "Unauthorized", "login": LOGIN_PATH},
+                        status_code=401, headers=headers)
+
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, gate: AuthGate):
+        super().__init__(app)
+        self._gate = gate
+
+    def _resolve(self, request: Request) -> Optional[User]:
+        name = session.verify(request.cookies.get(session.COOKIE_NAME, ""))
+        if name:
+            u = self._gate.get(name)
+            if u is not None:
+                return u
+        # Basic 只服务脚本：浏览器里的陈旧 Basic 缓存不能顶掉登出
+        if not _is_browser(request):
+            creds = _parse_basic(request.headers.get("authorization", ""))
+            if creds:
+                return self._gate.authenticate(*creds)
+        return None
+
+    async def dispatch(self, request, call_next):
+        if request.url.path in _PUBLIC_PATHS:
+            return await call_next(request)
+        user = self._resolve(request)
+        if user is None:
+            return (_login_redirect(request) if _wants_html(request)
+                    else _deny(request))
+        request.state.user = user
         return await call_next(request)
 
 
 def install_auth(app) -> bool:
     """
-    挂上鉴权。多账号优先，其次单账号，都没有则不挂（本地开发）。
+    挂上闸门。多账号优先，其次单账号，都没有则不挂（本地开发）。
     返回是否启用了鉴权。
     """
+    global GATE
     users = load_users()
     if users:
-        app.add_middleware(MultiUserAuthMiddleware, users=users)
-        return True
-    user = os.environ.get("FUNNEL_USER", "")
-    password = os.environ.get("FUNNEL_PASS", "")
-    if not (user and password):
-        return False
-    app.add_middleware(BasicAuthMiddleware, user=user, password=password)
+        GATE = AuthGate(users=users)
+    else:
+        name = os.environ.get("FUNNEL_USER", "")
+        password = os.environ.get("FUNNEL_PASS", "")
+        if not (name and password):
+            GATE = None
+            return False
+        GATE = AuthGate(single=(name, password))
+    app.add_middleware(AuthMiddleware, gate=GATE)
     return True
 
 

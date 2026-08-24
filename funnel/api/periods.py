@@ -13,7 +13,7 @@ from __future__ import annotations
 import calendar
 import re
 from datetime import date, timedelta
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, List, Tuple
 
 WEEK_RE = re.compile(r"^(\d{4})-W(\d{1,2})$")
 MONTH_RE = re.compile(r"^(\d{4})-(\d{1,2})$")
@@ -62,13 +62,33 @@ def week_month(year: int, week: int) -> Tuple[int, int]:
 
 def weeks_in_month(year: int, month: int) -> int:
     """该月包含的 ISO 周数（周四落在本月的周）。"""
-    n, d = 0, date(year, month, 1)
+    return len(weeks_of_month(year, month))
+
+
+def weeks_of_month(year: int, month: int) -> List[str]:
+    """周四落在该月的 ISO 周键，形如 '2026-W31'。与周目标归属同一套规则。"""
+    if not 1 <= month <= 12:
+        raise ValueError(f"非法月份 {month}")
+    keys: List[str] = []
+    d = date(year, month, 1)
     last = calendar.monthrange(year, month)[1]
     while d.day <= last and d.month == month:
         if d.isoweekday() == 4:
-            n += 1
+            iso_y, iso_w, _ = d.isocalendar()
+            keys.append(f"{iso_y}-W{iso_w:02d}")
         d += timedelta(days=1)
-    return n
+    return keys
+
+
+def period_label(period_key: str) -> str:
+    """总览/侧栏用的短标签：周 → W31，月 → 月度。"""
+    key = (period_key or "").strip()
+    m = WEEK_RE.match(key)
+    if m:
+        return f"W{int(m.group(2)):02d}"
+    if MONTH_RE.match(key):
+        return "月度"
+    return key
 
 
 def period_meta(period_key: str) -> Dict[str, Any]:

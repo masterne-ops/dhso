@@ -36,7 +36,7 @@ python3 -m venv .venv
 
 ## 鉴权与地区授权
 
-全站 HTTP Basic Auth，两种模式按文件存在与否自动选（`api/auth.py: install_auth`）：
+账号来源两种模式，按文件存在与否自动选（`api/auth.py: install_auth`）：
 
 | 模式 | 触发条件 | 行为 |
 |------|---------|------|
@@ -45,6 +45,21 @@ python3 -m venv .venv
 | 无鉴权 | 两者都没有 | 本地开发，`current_user()` 返回 `None`，视为不受限 |
 
 **多账号优先。** users.json 一旦生成，`funnel.env` 里那对凭证就不再能登录 —— 部署脚本的健康检查会自动识别这一点，别把 401 当成部署失败。
+
+### 两条认证通道
+
+| 客户端 | 通道 | 说明 |
+|--------|------|------|
+| 浏览器 | `/login` 表单 + 会话 cookie | `funnel_session`，HttpOnly / SameSite=Lax / 30 天 |
+| 脚本（curl、部署健康检查、`_verify_*.py`） | HTTP Basic | 仅对**不带 `Sec-Fetch-*` 头**的请求生效 |
+
+浏览器原来也走 Basic，登出做不干净：Basic 没有服务端会话，浏览器把凭证缓存到进程退出为止并自动重发。试过的偏方都有坑 —— 用假凭证覆盖缓存第二次就失效；每次换 `realm` 逼出登录框会让密码管理器丢掉已存条目；固定 `realm` 又会被浏览器用旧凭证静默登回去，根本不给重新输入的机会。表单登录把会话生命周期交回服务端，**登出 / 重登 / 记住密码 / 换账号**四件事才不互相打架。
+
+Basic 通道必须排除浏览器（靠 `Sec-Fetch-*` 识别，脚本不发这组头）。否则浏览器里残留的 Basic 缓存会绕过 cookie 把登出顶回来。同理，**给浏览器的 401 绝不带 `WWW-Authenticate`** —— 带了就会弹出原生 Basic 弹窗，正是要摆脱的东西。
+
+会话 token 是无状态签名串（`api/session.py`），密钥在 `/etc/so-funnel/session.key`（0600，首次自动生成）。密钥必须持久化，否则每次 `systemctl restart` 都会把所有人踢下线。
+
+未登录时：页面请求 303 跳 `/login?next=…`（`next` 只接受站内绝对路径，挡开放重定向），接口请求回 401 JSON，前端据此跳登录页。登录失败按 IP 计数，5 分钟内 10 次后冷却。
 
 ### 权限模型
 
@@ -65,9 +80,9 @@ python3 -m venv .venv
 
 ### 密码存储
 
-PBKDF2-HMAC-SHA256，240,000 次迭代，每账号独立 16 字节 salt，**只存哈希**。服务端永远不需要明文：Basic Auth 每个请求都会重发密码，验证时现算现比（`hmac.compare_digest`）。
+PBKDF2-HMAC-SHA256，240,000 次迭代，每账号独立 16 字节 salt，**只存哈希**。服务端永远不需要明文，验证时现算现比（`hmac.compare_digest`）。
 
-240k 次迭代约 60~100ms，而首屏会并发 5+ 个接口、每个都要重算一遍 KDF —— 所以有一个 60 秒的验证结果缓存。缓存 key 是 `HMAC(随机 pepper, 用户名\0密码)`，存的是**校验结果**而不是密码，内存 dump 里也拿不回明文；上限 512 条，防爆破把它撑成无界字典。
+240k 次迭代约 60~100ms。会话 cookie 命中时完全不跑 KDF；Basic 通道（脚本）每个请求都要跑，所以留了一个 60 秒的验证结果缓存。缓存 key 是 `HMAC(随机 pepper, 用户名\0密码)`，存的是**校验结果**而不是密码，内存 dump 里也拿不回明文；上限 512 条，防爆破把它撑成无界字典。
 
 用户名不存在时也会跑一遍 dummy KDF，否则"响应快 = 用户名不存在"就是白送一个用户名枚举口子。
 
@@ -90,18 +105,21 @@ ssh root@121.196.152.24 'shred -u /root/so-funnel-creds.txt' # 转达完删掉
 
 `CITIES` 里的 11 个市名与生产库 `district_base.城市` **逐字一致**（都带「市」）。命名对齐是硬要求：`scope` 要和 `geo_key` 第 2 段相等才能授权通过，改名会静默地把某个市锁在门外。
 
-> ⚠️ **仍是明文 HTTP**（8443 无 TLS）。Basic 凭证在链路上可被嗅探 —— 地区授权解决的是"登录后能改谁的数据"，**不解决传输安全**。要再扩大使用范围，需在 nginx 加 TLS 反代（把 unit 里 `--host` 改回 `127.0.0.1`）。
+> ⚠️ **仍是明文 HTTP**（8443 无 TLS）。表单密码、会话 cookie、Basic 凭证在链路上都可被嗅探 —— 地区授权解决的是"登录后能改谁的数据"，**不解决传输安全**。要再扩大使用范围，需在 nginx 加 TLS 反代（把 unit 里 `--host` 改回 `127.0.0.1`），届时给 cookie 加 `Secure`。
 
 ## 接口一览
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/` | 漏斗页面 |
+| GET / POST | `/login` | 登录表单 / 提交（公开路径，POST 成功后种会话 cookie） |
+| GET / POST | `/logout` | 删会话 cookie 并跳回登录页（公开路径） |
 | GET | `/api/funnel/me` | 当前登录账号 + 地区范围（前端据此锁地区、显示身份徽标） |
 | GET | `/api/funnel/state?geo_key=&period_key=` | 读该地区+周期的切片（含 meta 时间戳） |
 | POST | `/api/funnel/state?geo_key=&period_key=` | 保存切片，**覆盖**同周期旧值 |
 | GET | `/api/funnel/slices?geo_key=&limit=` | 列出已存切片（仅元数据，按更新时间倒序） |
 | GET | `/api/funnel/factor-defs` | 因子定义（指标库清单） |
+| GET | `/api/funnel/factor-library?conv_key=` | 指标库弹窗：系统 defs + 各地手填（带来源地市/周期/实际目标；不含待办思考） |
 | GET | `/api/funnel/factor-values?geo_key=&period_key=&refresh=` | 自动因子计算值（缓存 1 小时，`refresh=true` 强制重算并带明细） |
 | GET | `/api/funnel/redpack-values` | 券种/券状态取值分布（诊断用，核对券类因子判定条件） |
 | GET | `/api/funnel/targets?geo_key=&period_key=` | 下发目标：全年（库内权威值，只读）+ 本期（按月节奏分解的预设值） |
@@ -256,6 +274,7 @@ ssh root@121.196.152.24 '/opt/so-funnel/venv/bin/python3 /tmp/_verify_live_auth.
 | `a2t_visit` | 授权→激活 | 跑动次数（合计） | ✅ 已接入 |
 | `a2t_visit_dahua` | 授权→激活 | 跑动次数（大华） | ✅ 已接入 |
 | `a2t_visit_dealer` | 授权→激活 | 跑动次数（代理商） | ✅ 已接入 |
+| `a2v1_new_open` | 授权→已开单 | 新增开单服务商 | ✅ 安装红包首次上线 |
 
 **因子目标一律不预设**（金总 2026-08-01 定）：`SEED_DEFS` 里所有因子的 `default_target` 都留空，前端 `getFactorTarget()` 也不回落演示值。因子目标库里没有下发值，各地区基数差一个量级（跑动次数尤其），任何预设都是拍脑袋的数——空着让用户按地区手填，比给一个看起来权威的假目标好。填过的值按 `geo+period+跳+因子` 存进切片。
 
@@ -287,6 +306,17 @@ ssh root@121.196.152.24 '/opt/so-funnel/venv/bin/python3 /tmp/_verify_live_auth.
 | 2026-07 | 全省 | 0 | — | `null`（7 月未发券） |
 
 各市之和严格等于全省（2026-05：97/72），已线上逐市核对。
+
+### 新增开单服务商（计数）
+
+业务含义：当前周期内服务商从签约 V0 变为已开单 V1。`provider_contract` 没有等级变更流水，取数代理为 **安装红包终身第一次上线落在本期**：
+
+- 载体 `install_redpack`，按 `上线客户编码` 去重
+- `MIN(date(上线时间))` 落在 `[start, end]`
+- INNER JOIN `provider_contract` 取地区（`客户城市` / `客户区县`），排除授牌
+- 不筛当前 `服务商等级 = v1`：同期 V0→V2 也应计入破冰
+- **0 家是真值**，返回 0 不是 `null`
+- 口径窄于 `product_flow` SO（只覆盖红包扫码上线）
 
 ## 下发目标（全年只读 + 本期预设）
 

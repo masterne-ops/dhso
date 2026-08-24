@@ -24,7 +24,10 @@ from ..prod_db import (
 from ..rollup import rollup as prod_rollup
 from ..auth import current_user
 from ..users import authorize_geo, scoped_geo_tree
-from ..schemas import StatePayload
+from ..schemas import StatePayload, OverviewItemPatch
+from ..overview import build_overview, patch_item
+from ..week_rollup import build_week_rollup
+from ..factor_library import build_factor_library
 
 router = APIRouter(prefix="/api/funnel", tags=["funnel"])
 
@@ -48,6 +51,56 @@ def require_geo(request, geo_key: str) -> None:
             status_code=403,
             detail=f"无权访问该地区。当前账号「{user.label}」的范围是 "
                    f"{user.scope}（含其下属区县），不含省级汇总。")
+
+
+@router.get("/overview")
+def get_overview(request: Request,
+                 period_key: str = PeriodKey,
+                 level: Optional[str] = Query(
+                     None, pattern="^(city|district)$",
+                     description="city=下一级地市；district=区县。默认：管理员地市、地市账号区县"),
+                 city: Optional[str] = Query(
+                     None, description="管理员看区县时可选，只列该市")):
+    """
+    管辖总览：一次返回下级单位的 YTD 转化率、短板、待办/问题。
+
+    不串行打 /data+/state。地市账号只看到本市（scoped_geo_tree），
+    传别人的 city= 会 403。
+    """
+    user = current_user(request)
+    if city:
+        tree = scoped_geo_tree(user, prod_geo_tree())
+        province = (tree or {}).get("province") or "浙江"
+        require_geo(request, f"{province}/{city}/")
+    if not level:
+        level = "district" if (user and not user.is_admin) else "city"
+    try:
+        return build_overview(user, period_key, level, city)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/overview/item")
+def post_overview_item(request: Request, payload: OverviewItemPatch,
+                       geo_key: str = GeoKey, period_key: str = PeriodKey):
+    """勾选总览右侧一条待办/问题，写回该地区切片，不改目标和漏斗数。"""
+    require_geo(request, geo_key)
+    return patch_item(geo_key, period_key, payload.kind, payload.index,
+                      payload.done, payload.text)
+
+
+@router.get("/week-rollup")
+def get_week_rollup(request: Request,
+                    geo_key: str = GeoKey, period_key: str = PeriodKey):
+    """
+    月度 ← 当月各周切片。周视图返回空 weeks。
+    手填关键因素 / 待办 / 问题按周列出，不平均成月度值。
+    """
+    require_geo(request, geo_key)
+    try:
+        return build_week_rollup(geo_key, period_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @router.get("/me")
@@ -120,6 +173,18 @@ def get_slices(request: Request, geo_key: Optional[str] = None,
 def get_factor_defs(conv_key: Optional[str] = None):
     """Factor definitions. Empty until the factor library is populated."""
     return {"defs": list_factor_defs(conv_key)}
+
+
+@router.get("/factor-library")
+def get_factor_library(conv_key: Optional[str] = None):
+    """
+    指标库：系统可取数 defs + 各地切片收获的手填指标。
+
+    登录即可读（知识共享）。不返回待办/问题/思考。写仍走 POST /state，
+    地市账号只能改自己管辖的切片。
+    conv_key 有则只返回该漏斗跳（按页面跳，首单礼算 a2v1）。
+    """
+    return build_factor_library(conv_key)
 
 
 @router.get("/factor-values")

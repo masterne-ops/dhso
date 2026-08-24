@@ -1,0 +1,11 @@
+---
+description: This repo is funnel-only; do not touch analytics/DB write paths
+alwaysApply: true
+---
+
+# Funnel-only scope
+
+- Only modify code under `funnel/`.
+- Do not add or edit Streamlit dashboard (`src/`), data API, migrations, report_tools, or production DB schema/import scripts in this repo.
+- Shared `product_flow.db` (via `SO_PROD_DB` / `prod_db.py`) is **read-only**. Persist funnel state only in `funnel/data/funnel.db`.
+- Deploy with `funnel/deploy_funnel.sh` only.

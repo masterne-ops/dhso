@@ -75,6 +75,8 @@ rsync "${RSYNC_OPTS[@]}" --delete \
 
 log "同步页面 + 设计文档"
 rsync "${RSYNC_OPTS[@]}" "$LOCAL_ROOT/funnel_v2.html" "$SERVER:$REMOTE_ROOT/"
+rsync "${RSYNC_OPTS[@]}" "$LOCAL_ROOT/overview.html" "$SERVER:$REMOTE_ROOT/"
+rsync "${RSYNC_OPTS[@]}" "$LOCAL_ROOT/md.js" "$SERVER:$REMOTE_ROOT/"
 rsync "${RSYNC_OPTS[@]}" "$LOCAL_ROOT/docs/factor-library-design.md" "$SERVER:$REMOTE_ROOT/docs/"
 
 log "同步运维脚本"
@@ -169,6 +171,7 @@ for i in 1 2 3 4 5; do
         ok "服务健康 —— $URL/"
         echo
         printf "  漏斗页面   %s/\n" "$URL"
+        printf "  管辖总览   %s/overview\n" "$URL"
         printf "  接口文档   %s/docs\n" "$URL"
         if [ "$MODE" = "multi" ]; then
             printf "  登录账号   admin（全省）+ 11 个地市账号，见 /root/so-funnel-creds.txt\n"

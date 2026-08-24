@@ -49,13 +49,18 @@ body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
 .certTab .cnt{opacity:.75;font-size:11px;margin-left:3px}
 .caveat{margin-top:14px;padding:10px 12px;background:#fffbe6;border:1px solid #ffe58f;
   border-radius:6px;font-size:12px;line-height:1.6;color:#874d00}
-.penBox{margin-bottom:16px;padding:14px 16px;background:linear-gradient(135deg,#e6f4ff,#f0f5ff);
-  border:1px solid #91caff;border-radius:8px}
-.penMain{display:flex;align-items:center;gap:12px}
-.penNum{font-size:34px;font-weight:700;color:#0958d9;line-height:1}
-.penLbl{font-size:13px;font-weight:600;color:var(--text);line-height:1.5}
-.penFml{font-size:11px;font-weight:400;color:var(--muted)}
-.penSide{margin-top:8px;font-size:12px;color:var(--muted)}
+/* 转化率细节条：跟选中箭头联动；压矮成单行细长条，不占纵向版面 */
+.penBox{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;width:100%;
+  margin:0 0 12px;padding:6px 12px;background:linear-gradient(135deg,#e6f4ff,#f0f5ff);
+  border:1px solid #91caff;border-radius:6px;box-sizing:border-box}
+.penBox.idle{background:#fafafa;border-color:var(--border)}
+.penBox.idle .penNum{color:var(--text-s)}
+.penNum{font-size:18px;font-weight:700;color:#0958d9;line-height:1;flex-shrink:0}
+.penLbl{font-size:12px;font-weight:600;color:var(--text);white-space:nowrap}
+.penFml{font-size:11px;font-weight:400;color:var(--muted);margin-left:6px}
+.penSide{font-size:12px;color:var(--muted);flex:1;min-width:0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.penHint{font-size:11px;color:var(--gray);flex-shrink:0;margin-left:auto}
 .tierLine{margin-top:12px;padding:10px 12px;background:#fafafa;border:1px solid var(--line);
   border-radius:6px;font-size:12px;color:var(--text)}
 .tierLine b{color:#0958d9}
@@ -90,6 +95,13 @@ body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
 .saveStatus.saved{color:var(--green);background:var(--green-l)}
 .saveStatus.error{color:var(--red);background:var(--red-l)}
 .saveStatus.offline{color:var(--gray);background:var(--gray-l)}
+.logoutBtn{border:1px solid var(--border);background:#fff;color:var(--text-s);
+           font-size:12px;padding:3px 10px;border-radius:4px;cursor:pointer;
+           white-space:nowrap;display:none}
+.logoutBtn:hover{border-color:var(--red);color:var(--red);background:var(--red-l)}
+.navLink{font-size:12px;color:var(--blue);text-decoration:none;padding:3px 10px;
+         border:1px solid var(--border);border-radius:4px;white-space:nowrap}
+.navLink:hover{background:var(--blue-l);border-color:#91caff}
 
 /* Layout */
 /* 横向漏斗五阶 + 四个箭头要横向铺开，比原来的竖排费宽度，故放宽画布 */
@@ -100,13 +112,23 @@ body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
    拒绝收缩、整行向右溢出（锁定待办侧栏时就滑到侧栏底下去，看着像"没变窄"）。
    写成 minmax(0,1fr) 才允许压到 0 以下界，超宽的表交给 #sideWrap 的
    overflow-x:auto 横向滚动。上面 .funnelLayout 同理，两处要一致。 */
-.bottomRow{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:20px}
-@media(max-width:900px){.bottomRow{grid-template-columns:1fr}}
+.bottomRow{display:grid;grid-template-columns:minmax(0,1fr);gap:20px;align-items:start}
+.bottomRow.monthMode{grid-template-columns:minmax(0,1fr) 380px}
+@media(max-width:900px){.bottomRow,.bottomRow.monthMode{grid-template-columns:1fr}}
 .card{background:#fff;border-radius:var(--radius);box-shadow:var(--shadow)}
+#factorPanel{z-index:2;overflow:visible}
 .cHdr{padding:14px 20px 10px;border-bottom:1px solid var(--border);
       display:flex;align-items:center;justify-content:space-between}
 .cTitle{font-size:14px;font-weight:600}
 .cSub{font-size:12px;color:var(--gray)}
+details.foldCard > summary{cursor:pointer;list-style:none}
+details.foldCard > summary::-webkit-details-marker,
+details.foldCard > summary::marker{display:none;content:''}
+details.foldCard > summary::before{content:'▾';color:var(--gray);font-size:12px;flex-shrink:0;margin-right:8px}
+details.foldCard:not([open]) > summary::before{content:'▸'}
+details.foldCard:not([open]) > summary{border-bottom:none}
+details.foldCard:not([open]){align-self:start;height:fit-content}
+details.foldCard > summary .cSub{margin-left:auto}
 /* Funnel — 横向：柱子从左到右依次收窄，箭头夹在相邻两阶之间 */
 .fWrap{padding:18px 16px 12px}
 /* 五阶 + 四个箭头 = 9 列。柱子列等宽，箭头列按内容宽度自适应。
@@ -142,15 +164,13 @@ body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
 .aArrowGlyph{color:var(--gray);font-size:13px;line-height:1}
 .aBadgeRow{display:flex;flex-direction:column;align-items:center;gap:3px}
 .aRate{padding:2px 7px;border-radius:20px;font-size:12px;font-weight:700;
-       border:1.5px solid;white-space:nowrap;cursor:default}
+       border:1.5px solid;white-space:nowrap;cursor:pointer}
 .aRate.good{color:var(--green);border-color:var(--green);background:var(--green-l)}
 .aRate.warn{color:var(--yellow);border-color:var(--yellow);background:var(--yellow-l)}
 .aRate.bad{color:var(--red);border-color:var(--red);background:var(--red-l)}
 .aToggle{border:none;background:none;color:var(--blue);cursor:pointer;
           font-size:11px;padding:2px 5px;border-radius:4px;white-space:nowrap}
 .aToggle:hover{background:var(--blue-l)}
-.aPeriodRate{font-size:12px;color:var(--text-s);
-             background:var(--gray-l);padding:2px 8px;border-radius:4px}
 
 /* Factors panel */
 .fPanel{padding:6px 0 4px;display:none}
@@ -195,14 +215,21 @@ body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
 .vCard .vPct{font-size:11px;color:var(--text-s)}
 .vCard.v3{background:#e6f4ff}.vCard.v4{background:#f9f0ff}.vCard.v5{background:#fff7e6}
 
-/* Side table */
+/* Side table — 卡片外框仍占满左列；表本身按内容宽，避免 100% 把列距拉开 */
+#progressCard #sideWrap{padding:10px 14px;overflow-x:auto}
+#progressCard .sTable{width:max-content;max-width:100%;border-collapse:collapse;font-size:12px}
+#progressCard .sTable th{text-align:left;color:var(--text-s);font-weight:500;padding:4px 8px;
+           border-bottom:1px solid var(--border);font-size:11px;white-space:nowrap}
+#progressCard .sTable td{padding:4px 8px;border-bottom:1px solid #f0f0f0;vertical-align:middle;white-space:nowrap}
+#progressCard .sTable tr:last-child td{border-bottom:none}
+#progressCard .caveat{margin-top:8px;padding:6px 8px;font-size:11px;line-height:1.45}
 .sTable{width:100%;border-collapse:collapse;font-size:13px}
 .sTable th{text-align:left;color:var(--text-s);font-weight:500;padding:8px 12px;
            border-bottom:1px solid var(--border);font-size:12px;white-space:nowrap}
 .sTable td{padding:9px 12px;border-bottom:1px solid #f0f0f0;vertical-align:middle;white-space:nowrap}
 .sTable tr:last-child td{border-bottom:none}
 .pBar{display:inline-block;background:#f0f0f0;border-radius:3px;
-      height:6px;width:80px;vertical-align:middle}
+      height:5px;width:56px;vertical-align:middle}
 .pBarF{height:100%;border-radius:3px;background:var(--blue)}
 .pBarF.warn{background:var(--yellow)}.pBarF.bad{background:var(--red)}
 .pct{font-size:12px;margin-left:4px}
@@ -211,18 +238,59 @@ body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
 .tgtEditBtn{border:none;background:none;cursor:pointer;color:var(--gray);font-size:11px;padding:1px 3px}
 .tgtEditBtn:hover{color:var(--blue)}
 
-/* Focus */
-.focusItem{border-radius:6px;padding:10px 14px;margin-bottom:8px}
-.focusItem.bad{background:var(--red-l);border:1px solid #ffccc7}
-.focusItem.warn{background:var(--yellow-l);border:1px solid #ffe58f}
-.focusItem.ok{background:var(--green-l);border:1px solid #b7eb8f}
-.fTitle{font-weight:600;font-size:13px;margin-bottom:4px}
-.fDesc{font-size:12px;color:var(--text-s);line-height:1.6}
-.fCopyBtn{margin-top:8px;padding:4px 10px;font-size:12px;background:#fff;
-           border:1px solid var(--border);border-radius:4px;cursor:pointer;color:var(--blue)}
-/* Focus section label */
-.focusSectionLbl{font-size:12px;color:var(--text-s);font-weight:600;padding-bottom:6px;
-                 border-bottom:1px solid var(--border);margin-bottom:8px;letter-spacing:.5px}
+/* 按月：各周关键因素（取代原「本周重点」） */
+#weekFactorWrap{max-height:520px;overflow-y:auto}
+.wfWeek{border:1px solid var(--border);border-radius:8px;padding:10px 12px;
+        margin-bottom:10px;background:#fafafa}
+.wfWeek:last-child{margin-bottom:0}
+.wfHead{display:flex;align-items:center;justify-content:space-between;gap:8px;
+        margin-bottom:4px;cursor:pointer}
+.wfHead:hover .wfLbl{color:var(--blue)}
+.wfLbl{font-size:13px;font-weight:600}
+.wfRange{font-size:11px;color:var(--gray);font-weight:400;margin-left:6px}
+.wfConv{font-size:11px;color:var(--text-s);font-weight:600;margin:8px 0 4px}
+.wfRow{display:flex;align-items:baseline;justify-content:space-between;gap:8px;
+       font-size:12px;padding:3px 0;border-bottom:1px solid #f0f0f0}
+.wfRow:last-child{border-bottom:none}
+.wfName{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.wfVals{flex-shrink:0;color:var(--text-s);white-space:nowrap}
+.wfEmpty{font-size:12px;color:var(--gray);padding:4px 0}
+
+/* 底部思考/目标：按地区+周期各存一份 */
+.notesBox{display:block;width:100%;min-height:220px;resize:vertical;
+          border:1px solid var(--border);border-radius:8px;padding:12px 14px;
+          font-size:14px;line-height:1.75;font-family:inherit;color:var(--text);
+          background:#fafafa}
+.notesBox:focus{outline:none;border-color:var(--blue);background:#fff;box-shadow:0 0 0 3px var(--blue-l)}
+.notesSeg{display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;flex-shrink:0}
+.notesSeg button{border:none;background:#fff;padding:3px 10px;font-size:12px;cursor:pointer;
+                 color:var(--text-s);font-family:inherit}
+.notesSeg button.on{background:var(--blue-l);color:var(--blue);font-weight:600}
+.notesPreview{min-height:220px;border:1px solid var(--border);border-radius:8px;
+              padding:12px 14px;background:#fff}
+.mdEmpty{color:var(--gray);margin:0}
+.mdBody{line-height:1.7;word-break:break-word}
+.mdBody p{margin:0 0 .6em}
+.mdBody p:last-child{margin-bottom:0}
+.mdBody h1,.mdBody h2,.mdBody h3{margin:.8em 0 .4em;line-height:1.35;font-weight:650}
+.mdBody h1:first-child,.mdBody h2:first-child,.mdBody h3:first-child{margin-top:0}
+.mdBody h1{font-size:18px}.mdBody h2{font-size:16px}.mdBody h3{font-size:15px}
+.mdBody ul,.mdBody ol{margin:.3em 0 .6em;padding-left:1.4em}
+.mdBody li{margin:.15em 0}
+.mdBody code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
+             background:#f0f0f0;padding:1px 5px;border-radius:3px}
+.mdBody pre.mdPre{background:#f5f5f5;border:1px solid #eee;border-radius:6px;
+                  padding:10px 12px;overflow:auto;margin:.5em 0}
+.mdBody pre.mdPre code{background:none;padding:0}
+.mdBody a{color:var(--blue);text-decoration:none}
+.mdBody a:hover{text-decoration:underline}
+.mdBody blockquote{margin:.5em 0;padding:4px 10px;border-left:3px solid #d9d9d9;
+                   color:var(--text-s);background:#fafafa}
+.mdBody hr{border:none;border-top:1px solid var(--border);margin:.8em 0}
+.mdBody strong{font-weight:650}
+.weekNote{margin-top:10px;padding:10px 12px;border:1px solid var(--border);
+          border-radius:8px;background:#fff}
+.weekNote .mdBody{margin-top:6px;font-size:13px}
 /* Todo list */
 .todoItem{display:flex;align-items:center;gap:8px;padding:6px 2px;
           border-bottom:1px solid #f5f5f5}
@@ -239,6 +307,8 @@ body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
             color:var(--blue);background:var(--blue-l);border:1px dashed var(--blue);
             border-radius:6px;cursor:pointer;text-align:center}
 .todoAddBtn:hover{background:var(--blue);color:#fff}
+.todoAddBtn.q{color:#d48806;background:#fffbe6;border-color:#faad14}
+.todoAddBtn.q:hover{background:#d48806;color:#fff}
 
 /* ── 待办侧边栏 ────────────────────────────────────────────────────────────────
    三态，状态存 localStorage('todo_dock')，跨地区/周期共用（是使用习惯，不是数据）：
@@ -271,7 +341,11 @@ body.dockLocked{padding-right:var(--dock-w)}
 .dockBtn.on{background:var(--blue-l);border-color:var(--blue);color:var(--blue)}
 .dockScope{padding:6px 14px;font-size:11px;color:var(--gray);
            border-bottom:1px solid var(--border);background:#fff;flex-shrink:0}
-.dockBody{flex:1;overflow-y:auto;padding:12px 14px}
+.dockBody{flex:1;min-height:0;overflow:hidden;padding:0;display:flex;flex-direction:column}
+.dockPane{flex:1;min-height:0;overflow-y:auto;padding:12px 14px}
+.dockPane + .dockPane{border-top:1px solid var(--border);background:#fafafa}
+.dockPaneLbl{font-size:12px;font-weight:600;color:var(--text-s);margin:0 0 8px;
+             letter-spacing:.4px}
 /* 收起后的拉手：竖排文字贴在右缘 */
 .dockTab{position:fixed;right:0;top:120px;z-index:119;
          writing-mode:vertical-rl;padding:12px 7px;cursor:pointer;
@@ -284,20 +358,28 @@ body.dockLocked{padding-right:var(--dock-w)}
   body.dockLocked{padding-right:0}
 }
 /* Funnel + Factor 2-column layout */
-/* 列宽与 .bottomRow 严格一致（1fr / 380px / gap 20），这样漏斗卡片与下面的
-   「完成情况」左右对齐、关键因素与「本周重点」左右对齐。改一个必须改另一个。 */
+/* 列宽与 .bottomRow.monthMode 严格一致（1fr / 380px / gap 20），这样漏斗卡片与
+   下面的「完成情况」左右对齐、关键因素与「各周关键因素」左右对齐。 */
 .funnelLayout{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:20px;align-items:start}
 @media(max-width:900px){.funnelLayout{grid-template-columns:1fr}}
 /* Factor panel */
 .fpEmpty{text-align:center;padding:48px 20px;color:var(--gray)}
 .fpEmpty .fpIcon{font-size:40px;margin-bottom:12px}
 .fpSectionLbl{font-size:12px;color:var(--text-s);font-weight:500;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid var(--border)}
-.fpItem{display:flex;align-items:center;gap:6px;padding:7px 0;border-top:1px solid #f5f5f5}
+.fpItem{display:flex;align-items:center;gap:6px;padding:7px 0;border-top:1px solid #f5f5f5;position:relative}
 .fpItem:first-child{border-top:none}
 .fpChk{width:15px;height:15px;cursor:pointer;accent-color:var(--blue);flex-shrink:0}
 .fpDot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 .fpDot.good{background:var(--green)}.fpDot.warn{background:var(--yellow)}.fpDot.bad{background:var(--red)}.fpDot.gray{background:var(--gray)}
-.fpName{flex:1;font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fpName{flex:1;font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default}
+.fpHoverTip{display:none;position:absolute;left:22px;top:calc(100% + 4px);z-index:8;
+            max-width:min(280px, calc(100% - 16px));padding:7px 10px;border-radius:6px;
+            background:#141414;color:#fff;font-size:12px;line-height:1.55;font-weight:400;
+            white-space:pre-wrap;word-break:break-word;box-shadow:0 6px 16px rgba(0,0,0,.22);
+            pointer-events:none}
+.fpHoverTip::after{content:"";position:absolute;left:14px;bottom:100%;
+                   border:5px solid transparent;border-bottom-color:#141414}
+.fpItem:hover .fpHoverTip.show{display:block}
 .fpVal{font-weight:600;font-size:13px;min-width:40px;text-align:right;flex-shrink:0}
 .fpManual{border:1px solid var(--border);border-radius:4px;padding:2px 5px;width:52px;font-size:13px;font-weight:600;text-align:center;background:#fffbe6;flex-shrink:0}
 .fpManual:focus{outline:none;border-color:var(--orange)}
@@ -308,19 +390,70 @@ body.dockLocked{padding-right:var(--dock-w)}
 .fpSrc.db{background:var(--blue-l);color:var(--blue-d)}.fpSrc.manual{background:var(--orange-l);color:var(--orange)}
 .fpDel{border:none;background:none;color:var(--gray);cursor:pointer;font-size:12px;padding:1px 3px}
 .fpDel:hover{color:var(--red)}
+.weekJump{border:1px solid var(--border);background:#fff;border-radius:4px;padding:1px 6px;
+          font-size:11px;color:var(--blue);cursor:pointer;margin-left:6px}
+.weekJump:hover{background:var(--blue-l)}
+.dockWeekLbl{display:flex;align-items:center;justify-content:space-between;gap:8px;
+             font-size:12px;color:var(--text-s);font-weight:600;margin:12px 0 6px;
+             padding-bottom:4px;border-bottom:1px dashed var(--border)}
 .fpAddBtn{display:block;width:100%;margin-top:12px;padding:7px;font-size:13px;color:var(--blue);background:var(--blue-l);border:1px dashed var(--blue);border-radius:6px;cursor:pointer;text-align:center}
 .fpAddBtn:hover{background:var(--blue);color:#fff}
-.fpLibBtn{display:block;width:100%;margin-top:8px;padding:6px;font-size:12px;color:var(--gray);background:var(--gray-l);border:1px solid var(--border);border-radius:6px;cursor:not-allowed;text-align:center}
+.fpLibBtn{display:block;width:100%;margin-top:8px;padding:7px;font-size:13px;color:var(--blue);background:#fff;
+          border:1px solid var(--border);border-radius:6px;cursor:pointer;text-align:center}
+.fpLibBtn:hover{border-color:var(--blue);background:var(--blue-l)}
 .aWrap.sel .aBadgeRow{background:var(--blue-l);border-radius:6px;padding:4px 8px;margin:-4px -8px}
 .aWrap.sel .aToggle{background:var(--blue);color:#fff}
+
+/* 指标库弹窗 */
+.libMask{display:none;position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.45);
+         align-items:center;justify-content:center;padding:24px}
+.libMask.on{display:flex}
+.libModal{background:#fff;border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.2);
+          width:min(720px,100%);max-height:min(86vh,720px);display:flex;flex-direction:column}
+.libHdr{padding:14px 18px 10px;border-bottom:1px solid var(--border);
+        display:flex;align-items:center;gap:10px}
+.libHdr .cTitle{flex:1}
+.libClose{border:none;background:none;font-size:18px;color:var(--gray);cursor:pointer;padding:2px 6px}
+.libClose:hover{color:var(--text)}
+.libTools{padding:10px 18px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+          border-bottom:1px solid var(--border);background:#fafafa}
+.libSearch{flex:1;min-width:140px;border:1px solid var(--border);border-radius:6px;
+           padding:6px 10px;font-size:13px;font-family:inherit}
+.libSearch:focus{outline:none;border-color:var(--blue)}
+.libSeg{display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.libSeg button{border:none;background:#fff;padding:5px 10px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--text-s)}
+.libSeg button.on{background:var(--blue);color:#fff}
+.libTabs{display:flex;gap:0;padding:0 18px;border-bottom:1px solid var(--border)}
+.libTab{border:none;background:none;padding:10px 14px;font-size:13px;cursor:pointer;
+        font-family:inherit;color:var(--text-s);border-bottom:2px solid transparent;margin-bottom:-1px}
+.libTab.on{color:var(--blue);font-weight:600;border-bottom-color:var(--blue)}
+.libBody{overflow-y:auto;padding:12px 18px 18px;flex:1}
+.libEmpty{font-size:13px;color:var(--gray);padding:28px 8px;text-align:center}
+.libCard{border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fafafa}
+.libCardTop{display:flex;align-items:flex-start;gap:8px}
+.libName{font-size:13px;font-weight:600;flex:1;min-width:0}
+.libMeta{font-size:12px;color:var(--text-s);line-height:1.65;margin-top:4px}
+.libTag{font-size:11px;padding:1px 6px;border-radius:3px;background:var(--blue-l);color:var(--blue-d);flex-shrink:0}
+.libTag.warn{background:var(--orange-l);color:var(--orange)}
+.libTag.gray{background:var(--gray-l);color:var(--gray)}
+.libPick{border:1px solid var(--blue);background:var(--blue);color:#fff;border-radius:4px;
+         padding:3px 10px;font-size:12px;cursor:pointer;flex-shrink:0;font-family:inherit}
+.libPick:hover{background:var(--blue-d)}
+.libPick.done{background:#fff;color:var(--gray);border-color:var(--border);cursor:default}
+.libDetails{margin-top:6px;font-size:12px;color:var(--text-s)}
+.libDetails summary{cursor:pointer;color:var(--blue)}
+.libOcc{display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-top:1px solid #f0f0f0}
 </style>
 </head>
 <body>
 <header class="hdr">
   <div class="hdrTop">
     <h1>🔻 服务商转化漏斗</h1>
+    <a href="/overview" id="overviewLink" class="navLink">管辖总览</a>
     <div class="sp"></div>
     <span id="whoami" class="saveStatus" style="display:none"></span>
+    <button type="button" id="logoutBtn" class="logoutBtn" onclick="doLogout()"
+            title="退出当前账号，可切换用户重新登录">登出</button>
     <span id="saveStatus" class="saveStatus offline">💾 本地模式</span>
     <span class="badge" id="dataBadge">📦 演示数据</span>
   </div>
@@ -338,23 +471,44 @@ body.dockLocked{padding-right:var(--dock-w)}
     </div>
     <div class="card" id="factorPanel"></div>
   </div>
-  <div class="bottomRow">
-    <div class="card">
-      <div class="cHdr"><span class="cTitle">📊 完成情况</span>
-        <span class="cSub">点击目标数字可编辑</span></div>
-      <div style="padding:14px 16px;overflow-x:auto" id="sideWrap"></div>
+  <div class="bottomRow" id="bottomRow">
+    <details class="card foldCard" id="progressCard" open>
+      <summary class="cHdr">
+        <span class="cTitle">📊 完成情况</span>
+        <span class="cSub">点标题折叠 · 点击目标数字可编辑</span>
+      </summary>
+      <div id="sideWrap"></div>
+    </details>
+    <details class="card foldCard" id="weekFactorCard" hidden open>
+      <summary class="cHdr">
+        <span class="cTitle">📋 各周关键因素</span>
+        <span class="cSub">点标题折叠 · 点周号打开该周</span>
+      </summary>
+      <div style="padding:14px 16px" id="weekFactorWrap"></div>
+    </details>
+  </div>
+  <div class="card" id="notesCard">
+    <div class="cHdr">
+      <span class="cTitle">💭 思考 / 目标</span>
+      <span class="cSub" id="notesScope" style="flex:1"></span>
+      <span class="notesSeg">
+        <button type="button" id="notesEditBtn" class="on" onclick="setNotesUi('edit')">编辑</button>
+        <button type="button" id="notesPrevBtn" onclick="setNotesUi('preview')">预览</button>
+      </span>
     </div>
-    <div class="card">
-      <div class="cHdr"><span class="cTitle">🚨 本周重点</span></div>
-      <div style="padding:14px 16px" id="focusWrap"></div>
+    <div style="padding:14px 16px 16px">
+      <textarea id="notesBox" class="notesBox"
+        placeholder="支持 Markdown：# 标题、**加粗**、列表、- 条目、[链接](https://…)。按当前地区和周期保存。"
+        oninput="saveNotes(this.value)"></textarea>
+      <div id="notesPreview" class="mdBody notesPreview" hidden></div>
+      <div id="weekNotesWrap"></div>
     </div>
   </div>
 </div>
-<!-- 待办侧边栏：从「本周重点」里抽出来独立成栏。待办是每天要盯的东西，
-     埋在页面底部右下角容易被漏掉。 -->
+<!-- 待办侧边栏：待办是每天要盯的东西，埋在页面底部容易被漏掉。 -->
 <aside class="todoDock hidden" id="todoDock">
   <div class="dockHdr">
-    <span class="dockTitle">📝 待办项</span>
+    <span class="dockTitle">📝 待办 / 问题</span>
     <span class="dockCnt" id="dockCnt"></span>
     <button class="dockBtn" id="dockLockBtn" onclick="toggleDockLock()"></button>
     <button class="dockBtn" onclick="setDockMode('hidden')" title="收起">✕</button>
@@ -363,6 +517,29 @@ body.dockLocked{padding-right:var(--dock-w)}
   <div class="dockBody" id="dockBody"></div>
 </aside>
 <button class="dockTab" id="dockTab" onclick="reopenDock()">📝 待办</button>
+<div class="libMask" id="libMask" onclick="if(event.target===this)closeFactorLib()">
+  <div class="libModal" role="dialog" aria-labelledby="libTitle">
+    <div class="libHdr">
+      <span class="cTitle" id="libTitle">📚 从指标库选择</span>
+      <span class="cSub" id="libSub"></span>
+      <button type="button" class="libClose" onclick="closeFactorLib()" title="关闭">✕</button>
+    </div>
+    <div class="libTools">
+      <input class="libSearch" id="libSearch" placeholder="搜索指标名称"
+             oninput="LIB.q=this.value; paintFactorLib()">
+      <div class="libSeg">
+        <button type="button" id="libScopeJump" class="on" onclick="setLibScope(false)">本跳</button>
+        <button type="button" id="libScopeAll" onclick="setLibScope(true)">全部跳</button>
+      </div>
+    </div>
+    <div class="libTabs">
+      <button type="button" class="libTab on" id="libTabSystem" onclick="setLibTab('system')">系统可取数</button>
+      <button type="button" class="libTab" id="libTabCommunity" onclick="setLibTab('community')">各地手填</button>
+    </div>
+    <div class="libBody" id="libBody"></div>
+  </div>
+</div>
+<script src="/md.js"></script>
 <script>
 // ── Mock data helpers ──────────────────────────────────────────────────────────
 // source: 'db' = 系统可取  |  'manual' = 需手填
@@ -377,10 +554,10 @@ function mkF(visit,fo,meet,pa,p61,ret,intentVisit){
     // 总量→授权 是渗透率那一跳，原 p2i(池→意向)/i2a(意向→授权) 两跳已合并
     p2a: { visit: F('跑动数量',visit[0],visit[1],'次','db'),
            iVisit: F('潜客跑动数量',intentVisit[0],intentVisit[1],'次','db') },
-    // 授权 → V1+（首次开单）：抓手是首单礼，所以首单礼因子挂在这一跳，
-    // 不再挂 a2t。这一跳的因子还没接生产取数（首单礼券种库里也还没有）。
+    // 授权 → V1+（首次开单）：新增开单是计数，首单礼是推动破冰的券。
     a2v1: {
-      fo:     F('首单礼红包券使用率',fo[0],fo[1],'%','db'),
+      newOpen: F('新增开单服务商',null,null,'家','db'),
+      fo:      F('首单礼红包券使用率',fo[0],fo[1],'%','db'),
     },
     a2t: {
       // 跑动分三档：合计 / 大华 / 代理商。两类打卡人数据源不同（大华走 SMB 拜访
@@ -509,6 +686,19 @@ const ARROW_NAMES = {
   t2v: '激活 → 高级服务商（V3+）',
 };
 
+// 顶部窄卡「转化率细节」的字段映射；内容随 S.selectedArrow 切换（未选时默认 p2a）
+const ARROW_DETAIL = {
+  p2a:  {num:'authorized', den:'pool',
+         title:(t)=>`${t||'品牌'}渗透率`,
+         fml:(t)=>`${t?t+'授权签约':'授权签约'} ÷ 城市总量`},
+  a2v1: {num:'activated_v1', den:'authorized',
+         title:()=>'授权 → 已开单', fml:()=>'已开单(V1+) ÷ 授权签约'},
+  a2t:  {num:'activated', den:'activated_v1',
+         title:()=>'开单 → 激活', fml:()=>'已激活(V2+) ÷ 已开单(V1+)'},
+  t2v:  {num:'senior', den:'activated',
+         title:()=>'激活 → 高级', fml:()=>'高级服务商(V3+) ÷ 已激活'},
+};
+
 // ── ISO week utilities ─────────────────────────────────────────────────────────
 // Returns the ISO year AND week. The ISO year can differ from the calendar year
 // around New Year: 2027-01-01 is 2026-W53, not 2027-W53 (which doesn't exist).
@@ -578,6 +768,22 @@ function currentMonthKey(){
 }
 if(!S.periodKey) S.periodKey = currentWeekKey();
 
+(function applyDeepLink(){
+  const q = new URLSearchParams(location.search);
+  const geo = q.get('geo');
+  const period = q.get('period');
+  if(geo){
+    const p = geo.split('/');
+    if(p[0]) S.province = p[0];
+    S.city = p[1] || null;
+    S.district = p[2] || null;
+  }
+  if(period){
+    S.periodKey = period;
+    S.periodType = /W/.test(period) ? 'week' : 'month';
+  }
+})();
+
 function periodKey(){ return S.periodKey; }
 function periodLabel(){
   if(S.periodType==='week'){
@@ -614,6 +820,12 @@ function getCustomFactors(convKey){ return (lsGet('custom_factors')||{})[customK
 function setCustomFactors(convKey,list){
   const m = lsGet('custom_factors')||{};
   m[customKey(convKey)] = list; lsSet('custom_factors',m); scheduleSave();
+}
+function libraryKey(convKey){ return `${geoKey()}/${periodKey()}/${convKey}`; }
+function getLibraryFactors(convKey){ return (lsGet('library_factors')||{})[libraryKey(convKey)]||[]; }
+function setLibraryFactors(convKey,list){
+  const m = lsGet('library_factors')||{};
+  m[libraryKey(convKey)] = list; lsSet('library_factors',m); scheduleSave();
 }
 
 // 目标口径（金总 2026-08-01 定）：
@@ -775,6 +987,49 @@ async function loadRollup(){
   }catch(e){ ROLLUP=null; }
 }
 
+// 月度 ← 各周切片。只在按月看时拉；周视图清空。不写进当前月切片，免得保存时把周数据吞掉。
+let WEEK_ROLLUP = null;
+function weekRollupWeeks(){
+  return (WEEK_ROLLUP && WEEK_ROLLUP.mode==='month') ? (WEEK_ROLLUP.weeks||[]) : [];
+}
+function localWeekRollup(){
+  if(S.periodType!=='month' || !S.periodKey) return null;
+  const parts = S.periodKey.split('-');
+  if(parts.length<2 || /W/.test(S.periodKey)) return null;
+  const year=+parts[0], month=+parts[1], gk=geoKey();
+  const weeks = weeksOfMonth(year, month).map(wk=>{
+    const todos=((lsGet('todos')||{})[`${gk}/${wk}`]||[]);
+    const questions=((lsGet('questions')||{})[`${gk}/${wk}`]||[]);
+    const manual=((lsGet('manual')||{})[gk]||{})[wk]||{};
+    const pre=`${gk}/${wk}/`;
+    const pick=(store)=>Object.fromEntries(
+      Object.entries(lsGet(store)||{}).filter(([k])=>k.startsWith(pre)));
+    const factor_targets=pick('factor_targets');
+    const custom_factors=pick('custom_factors');
+    const library_factors=pick('library_factors');
+    const factor_active=pick('factor_active');
+    const notes=((lsGet('notes')||{})[`${gk}/${wk}`]||'');
+    const m=wk.match(/W(\d+)/);
+    const has_data = !!(todos.length||questions.length||Object.keys(manual).length
+      ||Object.keys(factor_targets).length||Object.keys(custom_factors).length
+      ||Object.keys(library_factors).length
+      ||String(notes).trim());
+    return {period_key:wk, label:m?`W${m[1]}`:wk,
+            state:{todos,questions,manual,factor_targets,custom_factors,
+                   library_factors,factor_active,notes},
+            has_data};
+  });
+  return {mode:'month', period_key:S.periodKey, weeks};
+}
+async function loadWeekRollup(){
+  WEEK_ROLLUP = null;
+  if(S.periodType!=='month') return;
+  if(!apiAvailable){ WEEK_ROLLUP = localWeekRollup(); return; }
+  try{
+    WEEK_ROLLUP = await apiGet(`/week-rollup${scopeQS()}`);
+  }catch(e){ WEEK_ROLLUP = localWeekRollup(); }
+}
+
 // 真实值覆盖演示值：库里算得出就用库的，算不出（无样本/未接入）保留演示形状但
 // 把 val 置 null，由 renderFactorPanel 显示「—」并给出原因。
 function factorReal(factorKey){
@@ -810,8 +1065,9 @@ function factorStatus(f,overrideVal){
 const FACTOR_ID = {
   // 首单礼随「首次开单」一起挪到 a2v1 跳。因子 id 仍叫 a2t_fo —— 那是库里的主键，
   // 改名会让已有的缓存/用户填的目标失联，不值得。
-  'a2v1.fo':    'a2t_fo',
-  'a2t.meet':   'a2t_meet',
+  'a2v1.newOpen': 'a2v1_new_open',
+  'a2v1.fo':      'a2t_fo',
+  'a2t.meet':     'a2t_meet',
   'a2t.visit':  'a2t_visit',
   'a2t.visitD': 'a2t_visit_dahua',
   'a2t.visitA': 'a2t_visit_dealer',
@@ -834,7 +1090,10 @@ function factorTip(real){
   const d = real.detail;
   if(real.value==null) return '本地区本周期无样本';
   if(!d) return '取自生产库（缓存值）';
-  if(d.den==null) return `打卡 ${d.num} 次 · 覆盖 ${d.customers} 家客户 · ${d.people} 名打卡人`;
+  if(d.tip) return d.tip;
+  if(d.den==null && d.people!=null)
+    return `打卡 ${d.num} 次 · 覆盖 ${d.customers} 家客户 · ${d.people} 名打卡人`;
+  if(d.den==null) return `${d.num} 家`;
   return `发券 ${d.den} 张 · 已兑换 ${d.num} · 待解锁 ${d.pending} · 已失效 ${d.expired}`;
 }
 
@@ -891,13 +1150,37 @@ function renderGeoNav(){
 
   // 顶栏显示登录身份，免得几个人共用一台电脑时改错了别人的数
   const who = document.getElementById('whoami');
+  const logoutBtn = document.getElementById('logoutBtn');
   if(ME){
     who.style.display='';
     who.className = 'saveStatus ' + (ME.scope==='*' ? 'saved' : 'saving');
     who.textContent = ME.scope==='*' ? `👤 ${ME.label}（全省）` : `👤 ${ME.label}`;
     who.title = ME.scope==='*' ? '管理员账号：可查看全省及所有地市'
                                : `数据范围：${ME.scope} 及其下属区县`;
-  } else { who.style.display='none'; }
+    // 必须写 inline-block：空字符串会回落到 .logoutBtn{display:none}
+    if(logoutBtn) logoutBtn.style.display='inline-block';
+  } else {
+    who.style.display='none';
+    if(logoutBtn) logoutBtn.style.display='none';
+  }
+}
+
+// 会话 cookie 由服务端签发，登出就是删 cookie，可反复登出 / 换账号。
+// 用 POST 而不是链接跳转：GET 登出会被浏览器预取或第三方 <img> 触发。
+function doLogout(){
+  const btn = document.getElementById('logoutBtn');
+  if(btn){ btn.disabled = true; btn.textContent = '登出中…'; }
+  const f = document.createElement('form');
+  f.method = 'POST';
+  f.action = '/logout';
+  document.body.appendChild(f);
+  f.submit();
+}
+
+// 会话过期或被登出时，接口回 401；把用户送回登录页，别让页面卡在报错上。
+function gotoLogin(){
+  const back = location.pathname + location.search;
+  location.replace('/login?next=' + encodeURIComponent(back));
 }
 
 // 认证维度筛选。三档的家数取自 /data 的 cert.split（不随当前筛选变），
@@ -1010,6 +1293,22 @@ function jumpToNow(){
   S.periodKey = S.periodType==='week' ? currentWeekKey() : currentMonthKey();
   render();
 }
+function weeksOfMonth(year, month){
+  const out = [], last = new Date(year, month, 0).getDate();
+  for(let day=1; day<=last; day++){
+    const d = new Date(year, month-1, day);
+    if(d.getDay()===4){
+      const {year:iy, week} = isoWeekOf(d);
+      out.push(weekKey(iy, week));
+    }
+  }
+  return out;
+}
+function jumpToWeek(key){
+  S.periodType = 'week';
+  S.periodKey = key;
+  render();
+}
 
 // ── Funnel Bar（横向：一列一阶，柱高 ∝ 占城市总量的比例）─────────────────────
 // 高度按线性占比，不做对数压缩：漏斗末端本来就该看着矮，压缩会让「掉了多少」
@@ -1034,11 +1333,9 @@ function barCol(lbl, sub, ytdN, pN, maxN, color){
 }
 
 // ── Conversion Arrow (click → show factors in right panel) ────────────────────
-// ytdRate/periodRate 为 null 表示算不出（缺上下级增量），显示 — 而不是 0% 或 NaN
-function arrowHtml(id, ytdRate, periodRate, factors, convKey){
+function arrowHtml(id, ytdRate, factors, convKey){
   const fmt = r => r==null ? '—' : `${r}%`;
   const col = ytdRate==null ? '' : rateColor(ytdRate);
-  const periodCol = periodRate==null ? '' : rateColor(periodRate);
   const factorKeys = Object.keys(factors);
   // 只数「有值且低于目标」的。无样本的因子(gray)不算偏低 —— 没发券不等于没做好，
   // 把它算进偏低数会让箭头常年挂警告。
@@ -1055,13 +1352,35 @@ function arrowHtml(id, ytdRate, periodRate, factors, convKey){
   // 横向布局：徽标竖排夹在两根柱子中间，箭头符号改成向右
   return `<div class="aWrap${isSel?' sel':''}">
     <div class="aBadgeRow">
-      <div class="aRate ${col}" title="全年累计转化率">${fmt(ytdRate)}</div>
-      <div class="aRate ${periodCol}" style="font-size:11px"
-        title="本期增量转化率，上下级缺增量时显示 —">本期 ${fmt(periodRate)}</div>
+      <div class="aRate ${col}" onclick="selectArrow('${id}')"
+        title="点击查看该转化率细节与关键因素">${fmt(ytdRate)}</div>
       <button class="aToggle${isSel?' selected':''}" onclick="selectArrow('${id}')"
         title="查看该跳的关键因素">${hint} ${isSel?'✕':'▾'}</button>
     </div>
     <div class="aArrowGlyph">▶</div>
+  </div>`;
+}
+
+// 顶部窄卡：展示当前选中（或默认渗透率）那一跳的转化率细节
+function rateDetailHtml(focusId, ytdRate, y, p, aside, certTag){
+  const meta = ARROW_DETAIL[focusId] || ARROW_DETAIL.p2a;
+  const num = y[meta.num]||0, den = y[meta.den]||0;
+  const pNum = p[meta.num];
+  const idle = !S.selectedArrow;
+  const rateCls = ytdRate==null ? '' : rateColor(ytdRate);
+  const color = {good:'var(--green)',warn:'var(--yellow)',bad:'var(--red)'}[rateCls] || '#0958d9';
+  let side = `${num.toLocaleString()} / ${den.toLocaleString()} 家`;
+  if(focusId==='p2a' && certTag) side += ' · 城市总量为全量';
+  if(pNum!=null) side += ` · 本期 +${Number(pNum).toLocaleString()}`;
+  if(focusId==='p2a' && aside.intent!=null){
+    side += ` · 潜客池 ${aside.intent.toLocaleString()}家` +
+      (aside.intent_signed!=null?`（已建档 ${aside.intent_signed.toLocaleString()}）`:'');
+  }
+  return `<div class="penBox${idle?' idle':''}" title="${ARROW_NAMES[focusId]||''}">
+    <span class="penNum" style="color:${color}">${ytdRate!=null?ytdRate+'%':'—'}</span>
+    <span class="penLbl">${meta.title(certTag)}<span class="penFml">${meta.fml(certTag)}</span></span>
+    <span class="penSide">${side}</span>
+    ${idle?'<span class="penHint">点击下方转化率切换</span>':''}
   </div>`;
 }
 
@@ -1072,7 +1391,6 @@ function renderFunnel(){
   // 四阶同源同口径、逐层收紧（总量 ⊇ 授权 ⊇ 激活V2+ ⊇ 高级V3+），
   // 所以柱子基准直接取 pool，不会溢出。
   const maxN = Math.max(y.pool||0, 1);
-  const yf = d.ytdF||{}; const pf = (d.periodF||{})[pk]||{};
   const rate = (num,den)=> (den>0 && num!=null) ? Math.round(num/den*100) : null;
   const fmtPct = r => r==null ? '—' : `${r}%`;
   // YTD 转化率（五阶 → 四跳）
@@ -1080,38 +1398,25 @@ function renderFunnel(){
   const yR1b = rate(y.activated_v1, y.authorized);   // 授权 → V1+（首次开单）
   const yR2 = rate(y.activated, y.activated_v1);     // V1+ → V2+（激活）
   const yR3 = rate(y.senior, y.activated);
-  // 本期转化率：只在上下两级都有本期增量时才算，算不出就显示 —，不做近似换算
-  const pR1 = rate(p.authorized, y.pool);
-  const pR1b = rate(p.activated_v1, p.authorized);
-  const pR2 = rate(p.activated, p.activated_v1);
-  const pR3 = rate(p.senior, p.activated);
-  // factors to use: prefer period factors when available
-  const useF = (key) => (pf[key] && Object.keys(pf[key]).length) ? pf[key] : (yf[key]||{});
+  const useF = (key) => adoptedFactors(key);
 
-  // 渗透率抬头：品牌在市场客群的渗透率，本页核心指标
-  const pen = d.penetration!=null ? d.penetration : yR1;
+  // 顶部窄卡：跟选中的转化率箭头联动；未选时默认展示渗透率（p2a）
   const aside = d.aside||{};
   const certTag = {cert:'认证', nocert:'非认证'}[S.cert] || '';
-  let h = `<div class="penBox">
-      <div class="penMain"><span class="penNum">${pen!=null?pen+'%':'—'}</span>
-        <span class="penLbl">${certTag||'品牌'}渗透率<br><span class="penFml">${
-          certTag?`${certTag}授权签约`:'授权签约'} ÷ 城市总量</span></span></div>
-      <div class="penSide">${(y.authorized||0).toLocaleString()} / ${(y.pool||0).toLocaleString()} 家${
-        certTag?'　·　城市总量无认证维度，仍为全量':''}${
-        aside.intent!=null ? `　·　潜客池 ${aside.intent.toLocaleString()} 家${
-          aside.intent_signed!=null?`（已建档 ${aside.intent_signed.toLocaleString()}）`:''}` : ''}</div>
-    </div>`;
+  const focusId = S.selectedArrow || 'p2a';
+  const yRates = {p2a: (d.penetration!=null?d.penetration:yR1), a2v1:yR1b, a2t:yR2, t2v:yR3};
+  let h = rateDetailHtml(focusId, yRates[focusId], y, p, aside, certTag);
 
   // 五阶横排，四个箭头夹在相邻两阶之间。柱色由浅到深，与「逐层收紧」同向。
   h += `<div class="fFlow">`
     + barCol('城市服务商总量', '市场天花板', y.pool, null, maxN, '#91caff')
-    + arrowHtml('p2a', yR1, pR1, useF('p2a'), 'p2a')
+    + arrowHtml('p2a', yR1, useF('p2a'), 'p2a')
     + barCol('授权/签约', '', y.authorized, p.authorized, maxN, '#69b1ff')
-    + arrowHtml('a2v1', yR1b, pR1b, useF('a2v1'), 'a2v1')
+    + arrowHtml('a2v1', yR1b, useF('a2v1'), 'a2v1')
     + barCol('已开单', 'V1 以上', y.activated_v1, p.activated_v1, maxN, '#4096ff')
-    + arrowHtml('a2t', yR2, pR2, useF('a2t'), 'a2t')
+    + arrowHtml('a2t', yR2, useF('a2t'), 'a2t')
     + barCol('已激活', 'V2 以上', y.activated, p.activated, maxN, '#0958d9')
-    + arrowHtml('t2v', yR3, pR3, useF('t2v'), 't2v')
+    + arrowHtml('t2v', yR3, useF('t2v'), 't2v')
     + barCol('高级服务商', 'V3 以上', y.senior, p.senior, maxN, '#003eb3')
     + `</div>`;
 
@@ -1173,7 +1478,7 @@ function rollCell(scope, level){
 function rollFootnote(){
   const kind = ROLLUP.children_kind==='city' ? '地市' : '区县';
   const miss = LEVELS_MISSING();
-  return `<div class="caveat" style="margin-top:10px;background:#f6ffed;
+  return `<div class="caveat" style="background:#f6ffed;
       border-color:#b7eb8f;color:#274e13">
     📎 <b>${kind}卷积</b>＝本级各${kind}目标之和（每个${kind}取「已手填值 ?? 节奏预设值」）。
     差额 = 卷积 − 本级目标；<b>本级目标不会被卷积值改写</b> ——
@@ -1241,31 +1546,131 @@ function renderSideTable(){
   // 时完成率必然下降 —— 这是分子被筛过、分母没筛，得说清楚免得被当成掉目标。
   if(S.cert!=='all'){
     const t = {cert:'认证', nocert:'非认证'}[S.cert];
-    h += `<div class="caveat" style="margin-top:10px">ℹ️ 当前只看 <b>${t}</b> 服务商：
+    h += `<div class="caveat">ℹ️ 当前只看 <b>${t}</b> 服务商：
       实际值已按认证筛选，但目标值是全量目标（目标不随认证维度拆分），
       所以完成率会低于「全部」口径，两者不可直接比。</div>`;
   }
   document.getElementById('sideWrap').innerHTML = h;
 }
 
-// ── Todo helpers (per geo + period) ───────────────────────────────────────────
-function getTodos(){
-  const all = lsGet('todos')||{};
-  return all[`${geoKey()}/${periodKey()}`]||[];
+// ── Todo / question helpers (per geo + period) ────────────────────────────────
+function scopeListKey(){ return `${geoKey()}/${periodKey()}`; }
+function escAttr(s){
+  return String(s??'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
 }
-function setTodos(list){
-  const all = lsGet('todos')||{};
-  all[`${geoKey()}/${periodKey()}`] = list;
-  lsSet('todos', all); scheduleSave();
+function getStoreList(store){
+  const all = lsGet(store)||{};
+  return all[scopeListKey()]||[];
 }
-function addTodo(){
-  const list = getTodos();
-  list.push({text:'', done:false});
-  setTodos(list); renderDock();
+function setStoreList(store, list){
+  const all = lsGet(store)||{};
+  all[scopeListKey()] = list;
+  lsSet(store, all); scheduleSave();
+}
+function syncStoreFromDom(store, selector){
+  const list = getStoreList(store);
+  document.querySelectorAll(selector).forEach((el,i)=>{
+    if(list[i]) list[i].text = el.value;
+  });
+  return list;
+}
+function focusLastInput(selector){
   setTimeout(()=>{
-    const inputs = document.querySelectorAll('.todoInput');
+    const inputs = document.querySelectorAll(selector);
     if(inputs.length) inputs[inputs.length-1].focus();
   }, 30);
+}
+function getTodos(){ return getStoreList('todos'); }
+function setTodos(list){ setStoreList('todos', list); }
+function getQuestions(){ return getStoreList('questions'); }
+function setQuestions(list){ setStoreList('questions', list); }
+
+function notesKey(){ return `${geoKey()}/${periodKey()}`; }
+function getNotes(){ return (lsGet('notes')||{})[notesKey()] || ''; }
+function saveNotes(val){
+  const m = lsGet('notes')||{};
+  m[notesKey()] = val;
+  lsSet('notes', m);
+  const el = document.getElementById('notesBox');
+  if(el) el.dataset.scope = notesKey();
+  scheduleSave();
+}
+function renderMd(src){
+  if(typeof mdHtml==='function') return mdHtml(src);
+  return String(src||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\n/g,'<br>');
+}
+let notesUi = 'edit';
+function setNotesUi(mode){
+  notesUi = mode==='preview' ? 'preview' : 'edit';
+  const ta = document.getElementById('notesBox');
+  const pv = document.getElementById('notesPreview');
+  const editBtn = document.getElementById('notesEditBtn');
+  const prevBtn = document.getElementById('notesPrevBtn');
+  if(editBtn) editBtn.classList.toggle('on', notesUi==='edit');
+  if(prevBtn) prevBtn.classList.toggle('on', notesUi==='preview');
+  if(notesUi==='preview'){
+    if(ta) saveNotes(ta.value);
+    const html = renderMd(getNotes());
+    if(pv) pv.innerHTML = html || '<p class="mdEmpty">还没有内容。切到编辑，可用 Markdown 写。</p>';
+    if(ta) ta.hidden = true;
+    if(pv) pv.hidden = false;
+  }else{
+    if(ta) ta.hidden = false;
+    if(pv) pv.hidden = true;
+  }
+}
+function renderNotes(){
+  const el = document.getElementById('notesBox');
+  const scopeEl = document.getElementById('notesScope');
+  const key = notesKey();
+  const kind = S.periodType==='month' ? '本月单独一份' : '本周单独一份';
+  if(scopeEl){
+    scopeEl.textContent = `${S.district||S.city||S.province} · ${periodLabel()} · ${kind}`;
+  }
+  if(el){
+    el.placeholder = S.periodType==='month'
+      ? '记下本月思考。支持 Markdown（# 标题、**加粗**、列表、链接）。切到某一周是另一份。'
+      : '记下本周思考。支持 Markdown（# 标题、**加粗**、列表、链接）。切到按月是另一份。';
+    if(document.activeElement!==el || el.dataset.scope!==key){
+      el.value = getNotes();
+      el.dataset.scope = key;
+    }
+  }
+  setNotesUi(notesUi);
+  renderWeekNotes();
+}
+function renderWeekNotes(){
+  const wrap = document.getElementById('weekNotesWrap');
+  if(!wrap) return;
+  if(S.periodType!=='month'){ wrap.innerHTML=''; return; }
+  const blocks = weekRollupWeeks().map(w=>{
+    const text = String((w.state||{}).notes||'').trim();
+    if(!text) return '';
+    const range = (w.start&&w.end) ? `${w.start.slice(5)}–${w.end.slice(5)}` : '';
+    return `<div class="weekNote">
+      <div class="wfHead" onclick="jumpToWeek('${w.period_key}')">
+        <span class="wfLbl">${escAttr(w.label)} 已记<span class="wfRange">${escAttr(range)}</span></span>
+        <button type="button" class="weekJump"
+          onclick="event.stopPropagation();jumpToWeek('${w.period_key}')">打开该周</button>
+      </div>
+      <div class="mdBody">${renderMd(text)}</div>
+    </div>`;
+  }).filter(Boolean).join('');
+  wrap.innerHTML = blocks
+    ? `<div class="wfConv" style="margin-top:14px">本月各周已记</div>${blocks}`
+    : '';
+}
+
+function addTodo(){
+  const list = syncStoreFromDom('todos', '#todoPane .todoInput');
+  const last = list[list.length-1];
+  if(last && !String(last.text||'').trim()){
+    renderDock(); focusLastInput('#todoPane .todoInput'); return;
+  }
+  list.push({text:'', done:false});
+  setTodos(list); renderDock();
+  focusLastInput('#todoPane .todoInput');
 }
 function toggleTodo(idx){
   const list = getTodos(); if(!list[idx]) return;
@@ -1280,6 +1685,43 @@ function deleteTodo(idx){
 function updateTodoText(idx, val){
   const list = getTodos(); if(!list[idx]) return;
   list[idx].text = val; setTodos(list);
+}
+function todoKeydown(ev, idx){
+  if(ev.key!=='Enter' || ev.isComposing) return;
+  ev.preventDefault();
+  updateTodoText(idx, ev.target.value);
+  if(String(ev.target.value||'').trim()) addTodo();
+}
+
+function addQuestion(){
+  const list = syncStoreFromDom('questions', '#questionPane .todoInput');
+  const last = list[list.length-1];
+  if(last && !String(last.text||'').trim()){
+    renderDock(); focusLastInput('#questionPane .todoInput'); return;
+  }
+  list.push({text:'', done:false});
+  setQuestions(list); renderDock();
+  focusLastInput('#questionPane .todoInput');
+}
+function toggleQuestion(idx){
+  const list = getQuestions(); if(!list[idx]) return;
+  list[idx].done = !list[idx].done;
+  setQuestions(list); renderDock();
+}
+function deleteQuestion(idx){
+  const list = getQuestions();
+  list.splice(idx,1);
+  setQuestions(list); renderDock();
+}
+function updateQuestionText(idx, val){
+  const list = getQuestions(); if(!list[idx]) return;
+  list[idx].text = val; setQuestions(list);
+}
+function questionKeydown(ev, idx){
+  if(ev.key!=='Enter' || ev.isComposing) return;
+  ev.preventDefault();
+  updateQuestionText(idx, ev.target.value);
+  if(String(ev.target.value||'').trim()) addQuestion();
 }
 
 // ── 待办侧边栏 ────────────────────────────────────────────────────────────────
@@ -1326,124 +1768,223 @@ function applyDock(){
 function renderDock(){
   const body = document.getElementById('dockBody');
   if(!body) return;
-  const list = getTodos();
-  const undone = list.filter(t=>!t.done).length;
+  const todos = getTodos();
+  const questions = getQuestions();
+  const weeks = weekRollupWeeks();
+  let weekOpenT=0, weekOpenQ=0, weekN=0;
+  weeks.forEach(w=>{
+    const ts=(w.state&&w.state.todos)||[], qs=(w.state&&w.state.questions)||[];
+    weekN += ts.filter(t=>String(t.text||'').trim()).length
+           + qs.filter(q=>String(q.text||'').trim()).length;
+    weekOpenT += ts.filter(t=>String(t.text||'').trim() && !t.done).length;
+    weekOpenQ += qs.filter(q=>String(q.text||'').trim() && !q.done).length;
+  });
+  const undone = todos.filter(t=>!t.done).length + weekOpenT;
+  const qn = questions.filter(q=>String(q.text||'').trim() && !q.done).length + weekOpenQ;
   document.getElementById('dockCnt').textContent =
-    list.length ? `${undone}/${list.length}` : '';
-  // 待办是按 地区+周期 存的，侧栏常驻不随内容滚动，必须显式标出当前作用域，
-  // 否则用户切了地区看到待办变空会以为数据丢了
+    (todos.length||qn||weekN) ? `${undone}待办 · ${qn}问题` : '';
+  // 待办/问题按 地区+周期 存，侧栏常驻不随内容滚动，必须显式标出当前作用域，
+  // 否则用户切了地区看到列表变空会以为数据丢了
   document.getElementById('dockScope').textContent =
     `${S.district||S.city||S.province} · ${periodLabel()}`;
-  body.innerHTML = todoListHtml(list)
-    + `<button class="todoAddBtn" onclick="addTodo()">＋ 添加待办</button>`;
+  body.innerHTML = `
+    <div class="dockPane" id="todoPane">
+      <div class="dockPaneLbl">✅ 待办</div>
+      ${todoListHtml(todos)}
+      <button class="todoAddBtn" onclick="addTodo()">＋ 添加待办</button>
+    </div>
+    <div class="dockPane" id="questionPane">
+      <div class="dockPaneLbl">❓ 问题</div>
+      ${questionListHtml(questions)}
+      <button class="todoAddBtn q" onclick="addQuestion()">＋ 添加问题</button>
+    </div>
+    ${weekDockHtml(weeks)}`;
 }
-// 待办条目 HTML，侧栏与（历史上的）本周重点共用
+function weekDockHtml(weeks){
+  const blocks = (weeks||[]).map(w=>{
+    const todos=((w.state||{}).todos||[]).filter(t=>String(t.text||'').trim());
+    const qs=((w.state||{}).questions||[]).filter(q=>String(q.text||'').trim());
+    if(!todos.length && !qs.length) return '';
+    const range = (w.start&&w.end) ? `${w.start.slice(5)}–${w.end.slice(5)}` : '';
+    return `<div class="dockPane">
+      <div class="dockWeekLbl"><span>📅 ${escAttr(w.label)}${range?' · '+range:''}</span>
+        <button type="button" class="weekJump" onclick="jumpToWeek('${w.period_key}')">打开该周</button></div>
+      ${weekItemListHtml(w,'todo',(w.state||{}).todos||[])}
+      ${weekItemListHtml(w,'question',(w.state||{}).questions||[])}
+    </div>`;
+  }).filter(Boolean).join('');
+  if(!blocks) return '';
+  return `<div class="dockPaneLbl" style="margin-top:14px">本月各周 · 勾选写回该周，改文字请打开该周</div>${blocks}`;
+}
+function weekItemListHtml(w, kind, list){
+  return (list||[]).map((t,i)=>{
+    if(!String(t.text||'').trim()) return '';
+    return `<div class="todoItem${t.done?' done':''}">
+      <input type="checkbox" class="todoChk" ${t.done?'checked':''}
+        onchange="toggleWeekItem('${w.period_key}','${kind}',${i},this.checked,this)"
+        data-text="${escAttr(t.text)}">
+      <span class="todoInput">${escAttr(t.text)}</span>
+    </div>`;
+  }).join('');
+}
+async function toggleWeekItem(period, kind, index, done, el){
+  if(!apiAvailable){ if(el) el.checked=!done; return; }
+  el && (el.disabled=true);
+  try{
+    await apiPost(`/overview/item?geo_key=${encodeURIComponent(geoKey())}&period_key=${encodeURIComponent(period)}`,
+      {kind, index, done, text: el?el.getAttribute('data-text'):undefined});
+    await loadWeekRollup();
+    renderDock();
+  }catch(e){
+    if(el){ el.checked=!done; el.disabled=false; }
+    alert('勾选失败，请刷新后重试');
+  }
+}
 function todoListHtml(list){
   if(!list.length) return '<div style="font-size:13px;color:var(--gray);'
     + 'padding:6px 0">暂无待办</div>';
   return list.map((t,i)=>`<div class="todoItem${t.done?' done':''}">
     <input type="checkbox" class="todoChk" ${t.done?'checked':''} onchange="toggleTodo(${i})">
-    <input class="todoInput" type="text" value="${t.text.replace(/"/g,'&quot;')}"
+    <input class="todoInput" type="text" value="${escAttr(t.text)}"
            placeholder="填写待办内容…"
-           onchange="updateTodoText(${i},this.value)"
-           onkeydown="if(event.key==='Enter'&&this.value.trim()){addTodo()}">
+           oninput="this.title=this.value;updateTodoText(${i},this.value)"
+           onkeydown="todoKeydown(event,${i})"
+           title="${escAttr(t.text)}">
     <button class="todoDel" onclick="deleteTodo(${i})" title="删除">✕</button>
   </div>`).join('');
 }
-
-// ── Focus Panel ────────────────────────────────────────────────────────────────
-// 某跳里「有值且低于目标」的因子名。无样本(gray)不算短板 —— 没发券不等于没做好；
-// 没填目标也不算 —— 因子目标不预设，没目标就无从判断偏低。
-function weakFactorLabels(d, convKey){
-  const f = d.ytdF?.[convKey] || {};
-  return Object.keys(f).filter(k=>{
-    const real = factorReal(factorIdOf(convKey,k));
-    const v = real!==undefined ? real.value
-      : (f[k].source==='manual' ? getManualFactor(k,convKey) : null);
-    const st = factorStatus({...f[k],target:getFactorTarget(convKey,k,f[k])}, v);
-    return st==='bad' || st==='warn';
-  }).map(k=>f[k].label);
+function questionListHtml(list){
+  if(!list.length) return '<div style="font-size:13px;color:var(--gray);'
+    + 'padding:6px 0">复盘时把问题记在这里</div>';
+  return list.map((q,i)=>`<div class="todoItem${q.done?' done':''}">
+    <input type="checkbox" class="todoChk" ${q.done?'checked':''} onchange="toggleQuestion(${i})">
+    <input class="todoInput" type="text" value="${escAttr(q.text)}"
+           placeholder="填写问题…"
+           oninput="this.title=this.value;updateQuestionText(${i},this.value)"
+           onkeydown="questionKeydown(event,${i})"
+           title="${escAttr(q.text)}">
+    <button class="todoDel" onclick="deleteQuestion(${i})" title="删除">✕</button>
+  </div>`).join('');
 }
 
-function renderFocus(){
-  const d = currentData(); const pk = periodKey();
-  const y = d.ytd; const p = (d.period||{})[pk]||{};
-  const loc = S.district||S.city||S.province;
-  const issues = [];
-  const rate = (num,den)=> (den>0 && num!=null) ? Math.round(num/den*100) : null;
-  const pAct = p.activated??0; const pTgtAct = getTarget('activated',true);
-  // 认证筛选下实际值被筛过、目标没筛，对标目标会假报警，故只在「全部」口径下判目标
-  const tgtComparable = S.cert==='all';
-  // Check period target completion
-  if(tgtComparable && pTgtAct && pAct < pTgtAct*0.7){
-    issues.push({lvl:'bad',title:`本期激活 目标完成仅 ${Math.round(pAct/pTgtAct*100)}%`,
-      desc:`已激活 ${pAct} 家，目标 ${pTgtAct} 家，缺口 ${pTgtAct-pAct} 家`,
-      task:`[任务] 要求${loc}BD 本周集中推动已授权未激活服务商核销首单礼，目标补齐 ${pTgtAct-pAct} 家`});
+// ── 按月：各周已填关键因素 ─────────────────────────────────────────────────────
+// 周是录入粒度。月度只列出各周手填的目标 / 自定义指标 / 手填值，不平均成月度值。
+const WEEK_CONV_ORDER = ['p2a','a2v1','a2t','t2v'];
+function factorCatalog(){
+  return mkF([0,0,0,0],[0,0],[0,0],[0,0],[0,0],[0,0],[0,0]);
+}
+function filledVal(v){ return v!=null && v!==''; }
+function scopedRest(k, pk){
+  const needle = `/${pk}/`;
+  const i = String(k).indexOf(needle);
+  return i<0 ? null : String(k).slice(i + needle.length);
+}
+function weekFactorGroups(w){
+  const st = w.state || {};
+  const pk = w.period_key;
+  const catalog = factorCatalog();
+  const byConv = {};
+  WEEK_CONV_ORDER.forEach(c => { byConv[c] = []; });
+  const seen = {};
+  function addCatalog(convKey, factorKey, patch){
+    if(!byConv[convKey]) byConv[convKey] = [];
+    const id = convKey+'/'+factorKey;
+    let row = seen[id];
+    if(!row){
+      const f = (catalog[convKey]||{})[factorKey] || {};
+      row = {label:f.label||factorKey, val:null, target:null, unit:f.unit||'', kind:'library'};
+      seen[id] = row;
+      byConv[convKey].push(row);
+    }
+    Object.assign(row, patch);
   }
-  // 授权→V1（首次开单）和 V1→V2（激活）分开判：两跳抓手不同，合成一条给不出
-  // 可执行的动作。哪跳掉得多就报哪跳。
-  const yRv1 = rate(y.activated_v1, y.authorized);
-  const yRv2 = rate(y.activated, y.activated_v1);
-  if(yRv1!=null && yRv1 < 70){
-    const weak = weakFactorLabels(d,'a2v1');
-    issues.push({lvl:'bad',title:`授权→开单(V1+) 转化率偏低（${yRv1}%）`,
-      desc:`短板：${weak.length?weak.join('、'):'签约后首单未破冰'}　`
-        + `已授权 ${(y.authorized||0).toLocaleString()} 家中仅 ${(y.activated_v1||0).toLocaleString()} 家开过单`,
-      task:`[任务] 要求${loc} 业务员本周逐家跟进签约后零开单的服务商，用首单礼推动首次下单`});
+  // 只列本周选用/手填的，不再把 mkF 预设整表摊进来。
+  Object.entries(st.library_factors||{}).forEach(([k, list])=>{
+    const convKey = scopedRest(k, pk);
+    if(!convKey || convKey.includes('/')) return;
+    (list||[]).forEach(it=>{
+      if(!it || !it.factorKey) return;
+      addCatalog(convKey, it.factorKey, {
+        label: it.name || it.factorKey, unit: it.unit || '', kind:'library'
+      });
+    });
+  });
+  Object.entries(st.factor_targets||{}).forEach(([k,tgt])=>{
+    const rest = scopedRest(k, pk);
+    if(!rest) return;
+    const bits = rest.split('/');
+    if(bits.length!==2) return;
+    if(!seen[bits[0]+'/'+bits[1]]) return;
+    addCatalog(bits[0], bits[1], {target:tgt});
+  });
+  Object.entries(st.manual||{}).forEach(([convKey, fmap])=>{
+    Object.entries(fmap||{}).forEach(([factorKey, val])=>{
+      if(!filledVal(val)) return;
+      if(!seen[convKey+'/'+factorKey]) return;
+      addCatalog(convKey, factorKey, {val});
+    });
+  });
+  Object.entries(st.custom_factors||{}).forEach(([k, list])=>{
+    const convKey = scopedRest(k, pk);
+    if(!convKey || convKey.includes('/')) return;
+    if(!byConv[convKey]) byConv[convKey] = [];
+    (list||[]).forEach(cf=>{
+      const name = String(cf.name||'').trim();
+      if(!name && !filledVal(cf.val) && !filledVal(cf.target)) return;
+      byConv[convKey].push({
+        label: name || '自定义指标',
+        val: cf.val, target: cf.target, unit: cf.unit||'', kind:'custom'
+      });
+    });
+  });
+  return WEEK_CONV_ORDER.filter(c => (byConv[c]||[]).length).map(c => ({
+    convKey:c, name:ARROW_NAMES[c]||c, items:byConv[c]
+  }));
+}
+function fmtFactorNums(item){
+  const u = item.unit||'';
+  const v = filledVal(item.val) ? `${item.val}${u}` : '';
+  const t = filledVal(item.target) ? `目标 ${item.target}${u}` : '';
+  if(v && t) return `${v} · ${t}`;
+  return v || t || '—';
+}
+function renderWeekFactors(){
+  const row = document.getElementById('bottomRow');
+  const card = document.getElementById('weekFactorCard');
+  const wrap = document.getElementById('weekFactorWrap');
+  if(!row || !card || !wrap) return;
+  const month = S.periodType==='month';
+  row.classList.toggle('monthMode', month);
+  card.hidden = !month;
+  if(!month){ wrap.innerHTML=''; return; }
+  if(WEEK_ROLLUP==null){
+    wrap.innerHTML = '<div class="wfEmpty">正在读取各周…</div>';
+    return;
   }
-  if(yRv2!=null && yRv2 < 70){
-    const weak = weakFactorLabels(d,'a2t');
-    issues.push({lvl:'bad',title:`开单(V1+)→激活(V2+) 转化率偏低（${yRv2}%）`,
-      desc:`短板：${weak.length?weak.join('、'):'整体跑动不足'}　`
-        + `已开单 ${(y.activated_v1||0).toLocaleString()} 家中 ${(y.activated||0).toLocaleString()} 家达激活门槛`,
-      task:`[任务] 要求${loc} 业务员本周对已开单未激活服务商每家跑动≥2次，推动激活台数解锁转化红包`});
+  const weeks = weekRollupWeeks();
+  if(!weeks.length){
+    wrap.innerHTML = '<div class="wfEmpty">本月没有归属周</div>';
+    return;
   }
-  // 渗透率：不设固定阈值（各地市基数差异大），只在填了全年授权目标时对标目标
-  const yTgtAuth = getTarget('authorized',false);
-  const pen = d.penetration!=null ? d.penetration : rate(y.authorized, y.pool);
-  if(tgtComparable && yTgtAuth && y.authorized!=null && y.authorized < yTgtAuth*0.9){
-    const penTgt = y.pool>0 ? Math.round(yTgtAuth/y.pool*1000)/10 : null;
-    issues.push({lvl:'warn',title:`品牌渗透率 ${pen!=null?pen+'%':'—'}，未达目标${penTgt!=null?` ${penTgt}%`:''}`,
-      desc:`已授权 ${(y.authorized||0).toLocaleString()} 家 / 城市总量 ${(y.pool||0).toLocaleString()} 家，`
-        + `距全年目标 ${yTgtAuth.toLocaleString()} 家缺口 ${(yTgtAuth-y.authorized).toLocaleString()} 家`,
-      task:`[任务] 要求${loc}业务员本周重点开发未签约门店，补齐授权缺口 ${(yTgtAuth-y.authorized).toLocaleString()} 家`});
-  }
-  // 推广会参会率：因子目标没有预设，只有用户填了目标才判短板（否则无从对标）
-  const pa = d.ytdF?.a2t?.pa;
-  const paTgt = getFactorTarget('a2t','pa',pa);
-  const paReal = factorReal(factorIdOf('a2t','pa'));
-  const paVal = paReal!==undefined ? paReal.value : (pa ? pa.val : null);
-  if(paVal!=null && paTgt && paVal < paTgt*0.8){
-    issues.push({lvl:'warn',title:`推广会参会率不足（${paVal}%，目标${paTgt}%）`,
-      desc:`本周期推广会覆盖率低，影响签约转化`,
-      task:`[任务] ${loc}本周安排1场推广会，邀约意向服务商≥20家，使用6+1红包提升到场率`});
-  }
-  if(!issues.length){
-    issues.push({lvl:'ok',title:'各环节运转正常 ✅',
-      desc: tgtComparable ? '全年及本期各转化率均在目标区间，保持现有节奏即可'
-        : '当前为认证维度筛选口径，目标对标已暂停（目标为全量、实际已筛选，'
-          + '两者不同口径）。切回「全部」可看目标预警。',
-      task:null});
-  }
-  const anomalyHtml = issues.map(iss=>`<div class="focusItem ${iss.lvl}">
-    <div class="fTitle">${iss.lvl==='bad'?'🚨':iss.lvl==='warn'?'⚠️':'✅'} ${iss.title}</div>
-    <div class="fDesc">${iss.desc}</div>
-    ${iss.task?`<button class="fCopyBtn" onclick="copyTask(this,'${iss.task.replace(/'/g,"\\'")}')">📋 复制任务指令</button>`:''}
-  </div>`).join('');
-
-  // 待办项已移出本卡片，改由右侧常驻侧栏承载（renderDock）。这里只留异常项，
-  // 免得同一份待办出现两处、两边各自渲染又不同步。
-  const undone = getTodos().filter(t=>!t.done).length;
-  document.getElementById('focusWrap').innerHTML = `
-    <div class="focusSectionLbl">⚠️ 异常项</div>
-    ${anomalyHtml}
-    <div class="focusSectionLbl" style="margin-top:16px">📝 待办项</div>
-    <div style="font-size:13px;color:var(--text-s);padding:4px 0 8px">
-      ${undone ? `有 <b>${undone}</b> 项未完成` : '暂无未完成待办'}
-      —— 在右侧「📝 待办」侧栏管理
-    </div>
-    <button class="todoAddBtn" onclick="setDockMode('locked')">→ 打开待办侧栏</button>
-  `;
+  wrap.innerHTML = weeks.map(w=>{
+    const groups = weekFactorGroups(w);
+    const range = (w.start&&w.end) ? `${w.start.slice(5)}–${w.end.slice(5)}` : '';
+    const body = groups.length
+      ? groups.map(g=>`<div class="wfConv">${escAttr(g.name)}</div>`
+          + g.items.map(it=>`<div class="wfRow">
+              <span class="wfName" title="${escAttr(it.label)}">${it.kind==='custom'?'✏️ ':''}${escAttr(it.label)}</span>
+              <span class="wfVals">${escAttr(fmtFactorNums(it))}</span>
+            </div>`).join('')).join('')
+      : '<div class="wfEmpty">未填写关键因素</div>';
+    return `<div class="wfWeek">
+      <div class="wfHead" onclick="jumpToWeek('${w.period_key}')">
+        <span class="wfLbl">${escAttr(w.label)}<span class="wfRange">${escAttr(range)}</span></span>
+        <button type="button" class="weekJump"
+          onclick="event.stopPropagation();jumpToWeek('${w.period_key}')">打开该周</button>
+      </div>
+      ${body}
+    </div>`;
+  }).join('');
 }
 
 // ── Factor Panel Render ────────────────────────────────────────────────────────
@@ -1475,12 +2016,76 @@ function deleteCustomFactor(convKey, idx){
   setCustomFactors(convKey, list);
   renderFactorPanel();
 }
+function removeLibraryFactor(convKey, factorKey){
+  setLibraryFactors(convKey, getLibraryFactors(convKey).filter(it=>it && it.factorKey!==factorKey));
+  renderFunnel(); renderFactorPanel(); paintFactorLib();
+}
 
 function updateCustomFactor(convKey, idx, field, val){
   const list = getCustomFactors(convKey);
   if(!list[idx]) return;
   list[idx][field] = (field==='val'||field==='target') ? parseFloat(val)||0 : val;
   setCustomFactors(convKey, list);
+}
+
+function mkFFactors(convKey){
+  const d = currentData(); const pk = periodKey();
+  const pf = (d.periodF||{})[pk]||{};
+  const yf = d.ytdF||{};
+  return (pf[convKey]&&Object.keys(pf[convKey]).length) ? pf[convKey] : (yf[convKey]||{});
+}
+function adoptedFactors(convKey){
+  const catalog = mkFFactors(convKey);
+  const out = {};
+  getLibraryFactors(convKey).forEach(it=>{
+    if(!it || !it.factorKey) return;
+    const f = catalog[it.factorKey] || {
+      label: it.name || it.factorKey, unit: it.unit||'',
+      source: it.has_fetcher===false ? 'manual' : (it.source||'db')
+    };
+    out[it.factorKey] = {...f, label: it.name || f.label, unit: it.unit || f.unit};
+  });
+  return out;
+}
+
+function factorRowHtml(convKey, k, f, factorId, extraBtn){
+  const active = getFactorActive(convKey,k);
+  const real = factorReal(factorId || factorIdOf(convKey,k));
+  const mv = real !== undefined ? real.value
+    : (f.source==='manual' ? (getManualFactor(k,convKey)??f.val) : f.val);
+  const tgt = getFactorTarget(convKey,k,f);
+  const st = (active && mv!=null) ? factorStatus({...f,target:tgt}, mv) : 'gray';
+  const displayVal = mv==null ? '—'
+    : (f.unit==='%' ? `${mv}%` : `${mv}${f.unit||''}`);
+  const detail = real!==undefined ? factorTip(real) : '';
+  const tipBits = [f.label, displayVal!=='—' ? `当前 ${displayVal}` : '',
+                   tgt!=null && tgt!=='' ? `目标 ${tgt}${f.unit||''}` : '',
+                   detail].filter(Boolean);
+  const tip = tipBits.join('\n');
+  const valHtml = (real===undefined && f.source==='manual')
+    ? `<input class="fpManual" type="number" value="${mv??''}" ${!active?'disabled':''}
+         title="${escAttr(mv==null||mv===''?'':displayVal)}"
+         oninput="this.title=this.value===''?'':this.value+'${escAttr(f.unit||'')}'"
+         onchange="saveManual('${k}','${convKey}',this.value)">`
+    : `<span class="fpVal" style="${!active||mv==null?'color:var(--gray)':''}"
+         title="${escAttr(detail||displayVal)}">${displayVal}</span>`;
+  const srcTag = real!==undefined
+    ? `<span class="fpSrc db" title="${escAttr(detail||'生产库')}">${mv==null?'🔗 无数据':'🔗 生产库'}</span>`
+    : `<span class="fpSrc ${f.source||'db'}">${f.source==='manual'?'✏️ 手填':'🔗 系统'}</span>`;
+  return `<div class="fpItem" style="${!active?'opacity:0.45':''}">
+    ${tip?`<div class="fpHoverTip show">${escAttr(tip).replace(/\n/g,'<br>')}</div>`:''}
+    <input type="checkbox" class="fpChk" ${active?'checked':''} onchange="toggleFactor('${convKey}','${k}',this.checked)">
+    <div class="fpDot ${st}"></div>
+    <div class="fpName" title="${escAttr(f.label)}">${f.label}</div>
+    ${valHtml}
+    <input class="fpTgt" type="number" value="${tgt??''}" placeholder="目标" ${!active?'disabled':''}
+           title="${escAttr(tgt==null||tgt===''?'':tgt)}"
+           oninput="this.title=this.value"
+           onchange="saveFactorTarget('${convKey}','${k}',this.value)">
+    <span class="fpUnit">${f.unit||''}</span>
+    ${srcTag}
+    ${extraBtn||''}
+  </div>`;
 }
 
 function renderFactorPanel(){
@@ -1493,62 +2098,197 @@ function renderFactorPanel(){
     return;
   }
   const convKey = S.selectedArrow;
-  const d = currentData(); const pk = periodKey();
-  const pf = (d.periodF||{})[pk]||{};
-  const yf = d.ytdF||{};
-  const factors = (pf[convKey]&&Object.keys(pf[convKey]).length) ? pf[convKey] : (yf[convKey]||{});
   const customF = getCustomFactors(convKey);
-  let rows = Object.entries(factors).map(([k,f])=>{
-    const active = getFactorActive(convKey,k);
-    // 真实取数优先：接入了因子库的指标用库里的值，没接入的还是演示/手填值。
-    const real = factorReal(factorIdOf(convKey,k));
-    const mv = real !== undefined ? real.value
-      : (f.source==='manual' ? (getManualFactor(k,convKey)??f.val) : f.val);
-    const tgt = getFactorTarget(convKey,k,f);
-    const st = (active && mv!=null) ? factorStatus({...f,target:tgt}, mv) : 'gray';
-    const displayVal = mv==null ? '—'
-      : (f.unit==='%' ? `${mv}%` : `${mv}${f.unit}`);
-    // 真实值一律只读（库里算出来的，手改会掩盖口径问题）
-    const valHtml = (real===undefined && f.source==='manual')
-      ? `<input class="fpManual" type="number" value="${mv??''}" ${!active?'disabled':''} onchange="saveManual('${k}','${convKey}',this.value)">`
-      : `<span class="fpVal" style="${!active||mv==null?'color:var(--gray)':''}"
-           title="${real!==undefined?factorTip(real):''}">${displayVal}</span>`;
-    const srcTag = real!==undefined
-      ? `<span class="fpSrc db" title="${factorTip(real)}">${mv==null?'🔗 无数据':'🔗 生产库'}</span>`
-      : `<span class="fpSrc ${f.source}">${f.source==='db'?'🔗 系统':'✏️ 手填'}</span>`;
-    return `<div class="fpItem" style="${!active?'opacity:0.45':''}">
-      <input type="checkbox" class="fpChk" ${active?'checked':''} onchange="toggleFactor('${convKey}','${k}',this.checked)">
-      <div class="fpDot ${st}"></div>
-      <div class="fpName" title="${f.label}">${f.label}</div>
-      ${valHtml}
-      <input class="fpTgt" type="number" value="${tgt??''}" placeholder="目标" ${!active?'disabled':''} onchange="saveFactorTarget('${convKey}','${k}',this.value)">
-      <span class="fpUnit">${f.unit}</span>
-      ${srcTag}
-    </div>`;
-  }).join('');
-  // 分子分母等明细不再单独占版面 —— 鼠标悬停数值即可看（见 factorTip）
-  let customRows = customF.map((cf,i)=>`<div class="fpItem">
+  const libF = getLibraryFactors(convKey).filter(it=>it && it.factorKey);
+  let libRows = libF.map(it=>factorRowHtml(convKey, it.factorKey, {
+    label: it.name, unit: it.unit||'', source: it.has_fetcher===false ? 'manual' : (it.source||'db')
+  }, it.id, `<button class="fpDel" onclick="removeLibraryFactor('${convKey}','${it.factorKey}')" title="从本跳移除">✕</button>`)).join('');
+  let customRows = customF.map((cf,i)=>{
+    const tipBits = [cf.name, cf.val!==''&&cf.val!=null?`当前 ${cf.val}${cf.unit||''}`:'',
+                     cf.target!==''&&cf.target!=null?`目标 ${cf.target}${cf.unit||''}`:''].filter(Boolean);
+    const tip = tipBits.join('\n');
+    return `<div class="fpItem">
+    ${tip?`<div class="fpHoverTip show">${escAttr(tip).replace(/\n/g,'<br>')}</div>`:''}
     <input type="checkbox" class="fpChk" checked>
     <div class="fpDot gray"></div>
-    <input style="flex:1;border:none;border-bottom:1px dashed var(--border);background:transparent;font-size:13px;min-width:0" value="${cf.name}" onchange="updateCustomFactor('${convKey}',${i},'name',this.value)" placeholder="指标名称">
-    <input class="fpManual" type="number" value="${cf.val}" onchange="updateCustomFactor('${convKey}',${i},'val',this.value)">
-    <input class="fpTgt" type="number" value="${cf.target}" onchange="updateCustomFactor('${convKey}',${i},'target',this.value)">
+    <input style="flex:1;border:none;border-bottom:1px dashed var(--border);background:transparent;font-size:13px;min-width:0" value="${escAttr(cf.name)}" title="${escAttr(cf.name)}" oninput="this.title=this.value" onchange="updateCustomFactor('${convKey}',${i},'name',this.value)" placeholder="指标名称">
+    <input class="fpManual" type="number" value="${cf.val}" title="${escAttr(cf.val)}" oninput="this.title=this.value" onchange="updateCustomFactor('${convKey}',${i},'val',this.value)">
+    <input class="fpTgt" type="number" value="${cf.target}" title="${escAttr(cf.target)}" oninput="this.title=this.value" onchange="updateCustomFactor('${convKey}',${i},'target',this.value)">
     <span class="fpUnit">${cf.unit||'%'}</span>
     <span class="fpSrc manual">✏️ 手填</span>
     <button class="fpDel" onclick="deleteCustomFactor('${convKey}',${i})">✕</button>
-  </div>`).join('');
+  </div>`;
+  }).join('');
   panel.innerHTML = `<div class="cHdr">
     <span class="cTitle">📋 关键因素</span>
     <span class="cSub">${ARROW_NAMES[convKey]||convKey}</span>
   </div>
   <div style="padding:12px 16px">
-    <div class="fpSectionLbl">建议指标（勾选启用）</div>
-    ${rows}
-    ${customF.length?`<div class="fpSectionLbl" style="margin-top:12px">自定义指标</div>${customRows}`:''}
+    ${libRows?`<div class="fpSectionLbl">从指标库选用</div>${libRows}`:''}
+    ${customF.length?`<div class="fpSectionLbl"${libRows?' style="margin-top:12px"':''}>自定义指标</div>${customRows}`:''}
+    ${(!libRows && !customF.length)?`<div class="fpEmpty" style="padding:20px 0"><div style="font-size:13px">本跳还没有关键因素<br>从指标库选用，或自己添加</div></div>`:''}
     <button class="fpAddBtn" onclick="addCustomFactor('${convKey}')">＋ 添加自定义指标</button>
-    <div class="fpLibBtn">📚 从指标库选择（开发中）</div>
+    <button type="button" class="fpLibBtn" onclick="openFactorLib()">📚 从指标库选择</button>
   </div>`;
 }
+
+const LIB = {tab:'system', q:'', allConvs:false, data:null};
+function setLibTab(tab){ LIB.tab=tab; paintFactorLib(); }
+function setLibScope(all){ LIB.allConvs=!!all; paintFactorLib(); }
+function closeFactorLib(){
+  document.getElementById('libMask').classList.remove('on');
+}
+async function openFactorLib(){
+  if(!S.selectedArrow) return;
+  const mask = document.getElementById('libMask');
+  mask.classList.add('on');
+  document.getElementById('libBody').innerHTML = '<div class="libEmpty">读取指标库…</div>';
+  try{
+    LIB.data = apiAvailable ? await apiGet('/factor-library') : localFactorLibrary();
+  }catch(e){
+    LIB.data = localFactorLibrary();
+  }
+  paintFactorLib();
+}
+function localFactorLibrary(){
+  const community = [];
+  const seen = {};
+  Object.entries(lsGet('custom_factors')||{}).forEach(([k, list])=>{
+    const bits = String(k).split('/');
+    const conv = bits[bits.length-1];
+    (list||[]).forEach(cf=>{
+      const name = String(cf.name||'').trim();
+      if(!name) return;
+      const id = conv+'|'+name;
+      if(seen[id]) return;
+      seen[id]=1;
+      community.push({
+        name, unit: cf.unit||'%', conv_key: conv, conv_name: ARROW_NAMES[conv]||conv,
+        taskish: name.length>=12, origin:{geo_label:'本地', period_label:''},
+        latest:{geo_label:'本地', period_label:'', val:cf.val, target:cf.target, unit:cf.unit||'%'},
+        city_count:1, period_count:1, occurrences:[]
+      });
+    });
+  });
+  return {system:[], community};
+}
+function libMatch(name){
+  const q = (LIB.q||'').trim().toLowerCase();
+  if(!q) return true;
+  return String(name||'').toLowerCase().includes(q);
+}
+function fmtLibEffect(latest){
+  if(!latest) return '未填';
+  const u = latest.unit||'';
+  const v = (latest.val!=null && latest.val!=='') ? `${latest.val}${u}` : '';
+  const t = (latest.target!=null && latest.target!=='') ? `目标 ${latest.target}${u}` : '';
+  if(v && t) return `${v} · ${t}`;
+  return v || t || '未填';
+}
+function systemOnPanel(def){
+  return getLibraryFactors(def.conv_key).some(x=>
+    (def.id && x.id===def.id) || (def.factor_key && x.factorKey===def.factor_key));
+}
+function systemActive(def){
+  return systemOnPanel(def) && getFactorActive(def.conv_key, def.factor_key);
+}
+function communityOnPanel(item){
+  const name = String(item.name||'').trim();
+  return getCustomFactors(item.conv_key).some(x=>String(x.name||'').trim()===name);
+}
+function paintFactorLib(){
+  const body = document.getElementById('libBody');
+  if(!body || !document.getElementById('libMask').classList.contains('on')) return;
+  const conv = S.selectedArrow;
+  document.getElementById('libSub').textContent = ARROW_NAMES[conv]||conv||'';
+  document.getElementById('libTabSystem').classList.toggle('on', LIB.tab==='system');
+  document.getElementById('libTabCommunity').classList.toggle('on', LIB.tab==='community');
+  document.getElementById('libScopeJump').classList.toggle('on', !LIB.allConvs);
+  document.getElementById('libScopeAll').classList.toggle('on', LIB.allConvs);
+  const data = LIB.data||{system:[],community:[]};
+  const sysAll = (data.system||[]).filter(d=>LIB.allConvs || d.conv_key===conv);
+  const comAll = (data.community||[]).filter(d=>LIB.allConvs || d.conv_key===conv)
+    .sort((a,b)=>(b.use_count||(b.occurrences||[]).length||0)
+                -(a.use_count||(a.occurrences||[]).length||0));
+  const sysN = sysAll.length, comN = comAll.length;
+  document.getElementById('libTabSystem').textContent = `系统可取数 ${sysN}`;
+  document.getElementById('libTabCommunity').textContent = `各地手填 ${comN}`;
+  if(LIB.tab==='system'){
+    const rows = sysAll.filter(d=>libMatch(d.name));
+    body.innerHTML = rows.length ? rows.map(d=>{
+      const st = d.has_fetcher ? '已取数' : '待接取数';
+      const tag = d.has_fetcher ? 'libTag' : 'libTag gray';
+      const on = systemActive(d);
+      const jump = LIB.allConvs && d.conv_key!==conv
+        ? `<div class="libMeta">${escAttr(d.conv_name||d.conv_key)}</div>` : '';
+      const idx = (data.system||[]).indexOf(d);
+      return `<div class="libCard"><div class="libCardTop">
+        <div class="libName">${escAttr(d.name)} <span style="font-weight:400;color:var(--gray)">${escAttr(d.unit||'')}</span></div>
+        <span class="${tag}">${st}</span>
+        ${on?`<button type="button" class="libPick done">已在本跳</button>`
+            :`<button type="button" class="libPick" onclick="adoptSystem(${idx})">选用</button>`}
+      </div>${jump}</div>`;
+    }).join('') : '<div class="libEmpty">没有匹配的系统指标</div>';
+  }else{
+    const rows = comAll.filter(d=>libMatch(d.name));
+    body.innerHTML = rows.length ? rows.map((d,i)=>{
+      const on = communityOnPanel(d);
+      const origin = `${d.origin?.geo_label||''} · ${d.origin?.period_label||''}`;
+      const latestWho = `${d.latest?.geo_label||''} · ${d.latest?.period_label||''}`;
+      const occs = (d.occurrences||[]).map(o=>`<div class="libOcc">
+        <span>${escAttr(o.geo_label)} · ${escAttr(o.period_label)}</span>
+        <span>${escAttr(fmtLibEffect(o))}</span>
+      </div>`).join('');
+      const jump = LIB.allConvs && d.conv_key!==conv
+        ? `<div class="libMeta">${escAttr(d.conv_name||d.conv_key)}</div>` : '';
+      const idx = (data.community||[]).indexOf(d);
+      return `<div class="libCard"><div class="libCardTop">
+        <div class="libName">${escAttr(d.name)} <span style="font-weight:400;color:var(--gray)">${escAttr(d.unit||'')}</span>
+          ${d.taskish?'<span class="libTag warn">偏任务</span>':''}</div>
+        ${on?`<button type="button" class="libPick done">已在本跳</button>`
+            :`<button type="button" class="libPick" onclick="adoptCommunity(${idx})">选用</button>`}
+      </div>
+      ${jump}
+      <div class="libMeta">来源 ${escAttr(origin)}　最近 ${escAttr(latestWho)}　效果 ${escAttr(fmtLibEffect(d.latest))}　引用 ${d.use_count||(d.occurrences||[]).length||0} 次 · ${d.city_count||0} 市 · ${d.period_count||0} 期</div>
+      ${occs?`<details class="libDetails"><summary>历次明细</summary>${occs}</details>`:''}
+      </div>`;
+    }).join('') : '<div class="libEmpty">还没有各地手填的指标。本跳用「＋ 添加自定义指标」发明一条，保存后会出现在这里。</div>';
+  }
+}
+function adoptSystem(idx){
+  const def = ((LIB.data||{}).system||[])[idx];
+  if(!def || !def.factor_key) return;
+  if(def.conv_key && def.conv_key!==S.selectedArrow) S.selectedArrow = def.conv_key;
+  const conv = def.conv_key;
+  if(!systemOnPanel(def)){
+    const list = getLibraryFactors(conv);
+    list.push({id:def.id, factorKey:def.factor_key, name:def.name, unit:def.unit||'',
+               source:def.source||'auto', has_fetcher:!!def.has_fetcher});
+    setLibraryFactors(conv, list);
+  }
+  setFactorActive(conv, def.factor_key, true);
+  renderFunnel(); renderFactorPanel(); paintFactorLib();
+}
+function adoptCommunity(idx){
+  const item = ((LIB.data||{}).community||[])[idx];
+  if(!item) return;
+  if(item.conv_key && item.conv_key!==S.selectedArrow) S.selectedArrow = item.conv_key;
+  const conv = item.conv_key;
+  if(communityOnPanel(item)){ paintFactorLib(); return; }
+  const list = getCustomFactors(conv);
+  list.push({
+    name: item.name, val:'', target:'', unit: item.unit||'%',
+    from_geo: item.origin?.geo_key||'',
+    from_label: item.origin?.geo_label||'',
+    from_period: item.origin?.period_key||'',
+    from_period_label: item.origin?.period_label||'',
+  });
+  setCustomFactors(conv, list);
+  renderFactorPanel(); paintFactorLib();
+}
+document.addEventListener('keydown', e=>{
+  if(e.key==='Escape') closeFactorLib();
+});
 function selectCity(c){
   // 地市账号越不出本市。下拉框里本来就没有别的选项，这里是兜底（改 DOM/控制台）——
   // 真正的边界在服务端，越权请求一律 403。
@@ -1585,11 +2325,6 @@ function saveFactorTarget(convKey,factorKey,val){
   else { const n=parseFloat(s); if(isNaN(n)||n<0) return; m[key]=n; }
   lsSet('factor_targets',m); scheduleSave(); paint();
 }
-function copyTask(btn,text){
-  navigator.clipboard.writeText(text).then(()=>{
-    btn.textContent='✅ 已复制'; setTimeout(()=>btn.textContent='📋 复制任务指令',2000);
-  }).catch(()=>{ btn.textContent='复制失败，请手动'; });
-}
 
 // ── API layer ──────────────────────────────────────────────────────────────────
 const API = '/api/funnel';
@@ -1603,12 +2338,14 @@ function setSaveStatus(kind,text){
 
 async function apiGet(path){
   const r=await fetch(API+path);
+  if(r.status===401){ gotoLogin(); throw new Error('未登录'); }
   if(!r.ok) throw new Error(await r.text());
   return r.json();
 }
 async function apiPost(path,body){
   const r=await fetch(API+path,{method:'POST',
     headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(r.status===401){ gotoLogin(); throw new Error('未登录'); }
   if(!r.ok) throw new Error(await r.text());
   return r.json();
 }
@@ -1625,7 +2362,10 @@ function buildSlice(){
     factor_active:pick('factor_active'),
     factor_targets:pick('factor_targets'),
     custom_factors:pick('custom_factors'),
-    todos:(lsGet('todos')||{})[`${gk}/${pk}`]||[],
+    library_factors:pick('library_factors'),
+    todos:((lsGet('todos')||{})[`${gk}/${pk}`]||[]).filter(t=>String(t.text||'').trim()),
+    questions:((lsGet('questions')||{})[`${gk}/${pk}`]||[]).filter(q=>String(q.text||'').trim()),
+    notes:(lsGet('notes')||{})[`${gk}/${pk}`] || '',
   };
 }
 
@@ -1669,10 +2409,14 @@ function applySlice(slice){
   const gk=geoKey(), pk=periodKey();
   if(slice.targets){ const m=lsGet('targets')||{}; m[gk]=slice.targets; lsSet('targets',m); }
   if(slice.manual){ const m=lsGet('manual')||{}; m[gk]=m[gk]||{}; m[gk][pk]=slice.manual; lsSet('manual',m); }
-  ['factor_active','factor_targets','custom_factors'].forEach(store=>{
+  ['factor_active','factor_targets','custom_factors','library_factors'].forEach(store=>{
     if(slice[store]) lsSet(store,{...(lsGet(store)||{}),...slice[store]});
   });
   if(slice.todos){ const m=lsGet('todos')||{}; m[`${gk}/${pk}`]=slice.todos; lsSet('todos',m); }
+  if(slice.questions){ const m=lsGet('questions')||{}; m[`${gk}/${pk}`]=slice.questions; lsSet('questions',m); }
+  const nm=lsGet('notes')||{};
+  nm[`${gk}/${pk}`] = slice.notes || '';
+  lsSet('notes', nm);
 }
 
 // Pull the latest slice for the current geo+period, then repaint
@@ -1694,16 +2438,20 @@ async function loadSlice(){
 function paint(){
   renderGeoNav();
   renderPeriodBar();
+  const ov = document.getElementById('overviewLink');
+  if(ov) ov.href = '/overview?period=' + encodeURIComponent(S.periodKey);
   renderFunnel();
   renderFactorPanel();
   renderSideTable();
-  renderFocus();
+  renderWeekFactors();
+  renderNotes();
   renderDock();
 }
 // 切地区/切周期都要重取生产数据 —— 取完再 paint 一次，否则先画的是旧数字
 function render(){
   paint();
   loadSlice();
+  loadWeekRollup().then(paint);
   // 漏斗数、因子值、下发目标并行取，各自到了就重画一次
   loadProdData().then(paint);
   loadFactorValues().then(paint);
@@ -1725,6 +2473,8 @@ function render(){
     await loadRollup();      // 下级卷积目标
     paint();
     await loadSlice();
+    await loadWeekRollup();
+    paint();
   }catch(e){
     apiAvailable=false;
     setSaveStatus('offline','💾 本地模式');
