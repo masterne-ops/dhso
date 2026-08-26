@@ -21,6 +21,9 @@ FACTOR_UI = {
     "a2t_visit": {"conv_key": "a2t", "factor_key": "visit"},
     "a2t_visit_dahua": {"conv_key": "a2t", "factor_key": "visitD"},
     "a2t_visit_dealer": {"conv_key": "a2t", "factor_key": "visitA"},
+    "a2t_churn_visit": {"conv_key": "a2t", "factor_key": "churnVisit"},
+    "a2t_churn_recover": {"conv_key": "a2t", "factor_key": "churnRecover"},
+    "a2t_churn_visit_recover": {"conv_key": "a2t", "factor_key": "churnVisitRecover"},
     "a2v1_new_open": {"conv_key": "a2v1", "factor_key": "newOpen"},
 }
 

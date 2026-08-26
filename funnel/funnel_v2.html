@@ -102,6 +102,7 @@ body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
 .navLink{font-size:12px;color:var(--blue);text-decoration:none;padding:3px 10px;
          border:1px solid var(--border);border-radius:4px;white-space:nowrap}
 .navLink:hover{background:var(--blue-l);border-color:#91caff}
+.reportBtn{cursor:pointer;background:transparent;font-family:inherit}
 
 /* Layout */
 /* 横向漏斗五阶 + 四个箭头要横向铺开，比原来的竖排费宽度，故放宽画布 */
@@ -223,6 +224,28 @@ details.foldCard > summary .cSub{margin-left:auto}
 #progressCard .sTable td{padding:4px 8px;border-bottom:1px solid #f0f0f0;vertical-align:middle;white-space:nowrap}
 #progressCard .sTable tr:last-child td{border-bottom:none}
 #progressCard .caveat{margin-top:8px;padding:6px 8px;font-size:11px;line-height:1.45}
+#progressCard .specialSep{margin:14px 0 10px;border:0;border-top:1px dashed var(--border)}
+#progressCard .specialHead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+#progressCard .specialHead b{font-size:13px}
+#progressCard .specialHead input,#progressCard .specialHead button{
+  font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:#fff}
+#progressCard .specialHead button.primary{background:var(--blue);color:#fff;border-color:var(--blue);cursor:pointer}
+#progressCard .specialCombo{position:relative;min-width:220px;flex:1;max-width:360px}
+#progressCard .specialCombo input{width:100%;box-sizing:border-box}
+#progressCard .specialDrop{
+  display:none;position:absolute;left:0;right:0;top:100%;z-index:30;
+  max-height:220px;overflow-y:auto;margin:2px 0 0;padding:4px 0;
+  background:#fff;border:1px solid var(--border);border-radius:6px;
+  box-shadow:0 6px 16px rgba(0,0,0,.1)}
+#progressCard .specialDrop.open{display:block}
+#progressCard .specialDrop .opt{
+  display:block;width:100%;text-align:left;border:0;background:transparent;
+  padding:7px 10px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--text)}
+#progressCard .specialDrop .opt:hover,#progressCard .specialDrop .opt.on{background:var(--blue-l);color:var(--blue)}
+#progressCard .specialDrop .opt .u{color:var(--text-s);margin-left:4px}
+#progressCard .specialDrop .empty{padding:8px 10px;font-size:12px;color:var(--gray)}
+#progressCard .srcTag{font-size:11px;color:var(--text-s);background:#f5f5f5;padding:1px 6px;border-radius:3px}
+#progressCard .rmSpecial{border:none;background:none;color:var(--gray);cursor:pointer;font-size:12px}
 .sTable{width:100%;border-collapse:collapse;font-size:13px}
 .sTable th{text-align:left;color:var(--text-s);font-weight:500;padding:8px 12px;
            border-bottom:1px solid var(--border);font-size:12px;white-space:nowrap}
@@ -450,6 +473,10 @@ body.dockLocked{padding-right:var(--dock-w)}
   <div class="hdrTop">
     <h1>🔻 服务商转化漏斗</h1>
     <a href="/overview" id="overviewLink" class="navLink">管辖总览</a>
+    <button type="button" id="reportBtn" class="navLink reportBtn" onclick="openReport()"
+            title="按当前地区与周期生成报告（新窗口）">📄 生成报告</button>
+    <button type="button" id="salesEvalBtn" class="navLink reportBtn" onclick="openSalesEval()"
+            title="评估业务员或代理商跑动能力（新窗口）">👤 业务员评估</button>
     <div class="sp"></div>
     <span id="whoami" class="saveStatus" style="display:none"></span>
     <button type="button" id="logoutBtn" class="logoutBtn" onclick="doLogout()"
@@ -565,6 +592,9 @@ function mkF(visit,fo,meet,pa,p61,ret,intentVisit){
       visit:  F('跑动次数（合计）',visit[2],visit[3],'次','db'),
       visitD: F('跑动次数（大华）',null,null,'次','db'),
       visitA: F('跑动次数（代理商）',null,null,'次','db'),
+      churnVisit: F('流失客户跑动数量',null,null,'次','db'),
+      churnRecover: F('流失客户挽回数量',null,null,'家','db'),
+      churnVisitRecover: F('流失客户跑动挽回',null,null,'家','db'),
       meet:   F('业务员红包券使用率',meet[0],meet[1],'%','db'),
       pa:     F('推广会参会率',pa[0],pa[1],'%','db'),
       p61:    F('推广会6+1红包使用率',p61[0],p61[1],'%','manual'),
@@ -953,7 +983,7 @@ let FACTORS = {}, FACTOR_DETAIL = {};
 async function loadFactorValues(){
   if(!apiAvailable){ FACTORS={}; FACTOR_DETAIL={}; return; }
   try{
-    const r = await apiGet(`/factor-values${scopeQS()}&refresh=true`);
+    const r = await apiGet(`/factor-values${scopeQS()}`);
     FACTORS = r.values || {};
     FACTOR_DETAIL = r.details || {};
   }catch(e){ FACTORS={}; FACTOR_DETAIL={}; }
@@ -985,6 +1015,14 @@ async function loadRollup(){
     const r = await apiGet(`/target-rollup${scopeQS()}`);
     ROLLUP = r.available ? r : null;
   }catch(e){ ROLLUP=null; }
+}
+
+let SPECIAL = null;
+async function loadSpecial(){
+  if(!apiAvailable){ SPECIAL=null; return; }
+  try{
+    SPECIAL = await apiGet(`/special-targets${scopeQS()}`);
+  }catch(e){ SPECIAL=null; }
 }
 
 // 月度 ← 各周切片。只在按月看时拉；周视图清空。不写进当前月切片，免得保存时把周数据吞掉。
@@ -1043,7 +1081,7 @@ function setDataBadge(r){
   if(PROD){
     const a = PROD.asof||{};
     const cm = {cert:' · 仅认证', nocert:' · 仅非认证'}[S.cert] || '';
-    el.textContent = `🔗 生产库 · 签约数据截至 ${a.contract_signed||'—'}${cm}`;
+    el.textContent = `🔗 生产库 · 存量截至 ${a.stock_end||'—'} · 库最新签约 ${a.contract_signed||'—'}${cm}`;
     el.title = (PROD.notes?.caveats||[]).join('\n');
   }else{
     el.textContent = '⚠️ 演示数据（未连生产库）';
@@ -1071,6 +1109,9 @@ const FACTOR_ID = {
   'a2t.visit':  'a2t_visit',
   'a2t.visitD': 'a2t_visit_dahua',
   'a2t.visitA': 'a2t_visit_dealer',
+  'a2t.churnVisit': 'a2t_churn_visit',
+  'a2t.churnRecover': 'a2t_churn_recover',
+  'a2t.churnVisitRecover': 'a2t_churn_visit_recover',
 };
 function factorIdOf(convKey, factorKey){ return FACTOR_ID[`${convKey}.${factorKey}`]; }
 
@@ -1146,7 +1187,8 @@ function renderGeoNav(){
   const loc = S.district||S.city||S.province;
   const lvl = S.district?'区县':(S.city?'地市':'全省');
   document.getElementById('funnelTitle').textContent = `${loc} · ${lvl}汇总`;
-  document.getElementById('funnelSub').textContent = `YTD 全年 + ${periodLabel()}`;
+  document.getElementById('funnelSub').textContent =
+    `存量截至本期期末 · ${periodLabel()}增量`;
 
   // 顶栏显示登录身份，免得几个人共用一台电脑时改错了别人的数
   const who = document.getElementById('whoami');
@@ -1167,6 +1209,18 @@ function renderGeoNav(){
 
 // 会话 cookie 由服务端签发，登出就是删 cookie，可反复登出 / 换账号。
 // 用 POST 而不是链接跳转：GET 登出会被浏览器预取或第三方 <img> 触发。
+function openReport(){
+  if(!S.periodKey){ alert('请先选择周期'); return; }
+  const u = `/report?geo_key=${encodeURIComponent(geoKey())}&period_key=${encodeURIComponent(periodKey())}`;
+  window.open(u, '_blank', 'noopener');
+}
+
+function openSalesEval(){
+  if(!S.periodKey){ alert('请先选择周期'); return; }
+  const u = `/sales-eval?geo_key=${encodeURIComponent(geoKey())}&period_key=${encodeURIComponent(periodKey())}`;
+  window.open(u, '_blank', 'noopener');
+}
+
 function doLogout(){
   const btn = document.getElementById('logoutBtn');
   if(btn){ btn.disabled = true; btn.textContent = '登出中…'; }
@@ -1183,8 +1237,9 @@ function gotoLogin(){
   location.replace('/login?next=' + encodeURIComponent(back));
 }
 
-// 认证维度筛选。三档的家数取自 /data 的 cert.split（不随当前筛选变），
-// 所以「全部/认证/非认证」三个按钮上的数字始终是本地区的固定分布。
+// 认证维度筛选。三档的家数取自 /data 的 cert.split（不随当前筛选变，
+// 但随所选周期期末存量变），所以「全部/认证/非认证」三个按钮上的数字
+// 是本地区该周期的分布。
 function certTabsHtml(){
   const sp = PROD?.cert?.split;
   const total = sp ? (sp.cert||0)+(sp.nocert||0) : null;
@@ -1322,7 +1377,7 @@ function barCol(lbl, sub, ytdN, pN, maxN, color){
   return `<div class="fCol">
     <div class="fBarBox">
       <div class="fBar${short?' short':''}" style="height:${hPct}%;background:${color}"
-           title="${lbl.replace(/<[^>]+>/g,'')}：${ytdN.toLocaleString()} 家">
+           title="${lbl.replace(/<[^>]+>/g,'')}：截至本期 ${ytdN.toLocaleString()} 家">
         <span class="fNum">${ytdN.toLocaleString()}</span>
         ${pN!=null?`<span class="fPeriod">+${pN}</span>`:''}
       </div>
@@ -1393,7 +1448,7 @@ function renderFunnel(){
   const maxN = Math.max(y.pool||0, 1);
   const rate = (num,den)=> (den>0 && num!=null) ? Math.round(num/den*100) : null;
   const fmtPct = r => r==null ? '—' : `${r}%`;
-  // YTD 转化率（五阶 → 四跳）
+  // 期末存量转化率（五阶 → 四跳），随所选周期动
   const yR1 = rate(y.authorized, y.pool);            // 渗透率
   const yR1b = rate(y.activated_v1, y.authorized);   // 授权 → V1+（首次开单）
   const yR2 = rate(y.activated, y.activated_v1);     // V1+ → V2+（激活）
@@ -1433,7 +1488,7 @@ function renderFunnel(){
   document.getElementById('funnelWrap').innerHTML = h;
 }
 
-// ── Side Table (YTD + Period completion with editable targets) ─────────────────
+// ── Side Table (期末存量 + 本期完成率，目标可填) ───────────────────────────────
 const TGT_LOCK_TIP = '年初下达的全年目标（provider_target），库内即权威值，不可修改';
 
 // 本期目标输入框的 tooltip：说清预设值是怎么算出来的，以及用户可以改。
@@ -1514,7 +1569,7 @@ function renderSideTable(){
   const showRoll = !!ROLLUP && (rollKind==='city' || rollKind==='district');
   const rollLbl = rollKind==='city' ? '地市卷积' : '区县卷积';
   let h = `<table class="sTable"><thead><tr>
-    <th>层级</th><th>全年实际</th><th>全年目标</th>
+    <th>层级</th><th title="截至本周期最后一天的存量（签约日期/激活时间 ≤ 期末）">期末存量</th><th>全年目标</th>
     ${showRoll?`<th>${rollLbl}</th>`:''}<th>完成率</th>
     <th>本期+</th><th>本期目标</th>
     ${showRoll?`<th>${rollLbl}</th>`:''}<th>完成率</th>
@@ -1550,7 +1605,265 @@ function renderSideTable(){
       实际值已按认证筛选，但目标值是全量目标（目标不随认证维度拆分），
       所以完成率会低于「全部」口径，两者不可直接比。</div>`;
   }
+  h += renderSpecialBlock();
   document.getElementById('sideWrap').innerHTML = h;
+}
+
+function specialRollCell(it){
+  const r = it.rollup;
+  if(!it.additive){
+    return `<td><span class="rollNone" title="比率类指标不做下级目标卷积">—</span></td>`;
+  }
+  if(!r || r.children_kind==='none'){
+    return `<td><span class="rollNone">—</span></td>`;
+  }
+  if(r.sum==null){
+    const miss = r.n_missing ? `${r.n_missing} 个下级未填` : '无卷积';
+    return `<td><span class="rollNone" title="${miss}">—</span></td>`;
+  }
+  const own = it.target;
+  const diff = own!=null ? r.sum - own : null;
+  const diffTxt = diff==null ? ''
+    : `<span class="rollDiff ${diff>=0?'over':'under'}"
+             title="下级之和 − 本级目标">${diff>=0?'+':''}${diff.toLocaleString()}</span>`;
+  const tip = [
+    `下级目标之和：${r.sum.toLocaleString()}`,
+    `已填 ${r.n_set} · 缺 ${r.n_missing}`,
+    r.n_missing ? `缺：${(r.missing||[]).join('、')}` : '',
+  ].filter(Boolean).join('\n');
+  return `<td><span class="rollSum" title="${tip}">${r.sum.toLocaleString()}</span>
+    ${diffTxt}${r.n_missing?`<span class="rollWarn" title="${tip}">缺${r.n_missing}</span>`:''}</td>`;
+}
+
+function renderSpecialBlock(){
+  const showRoll = SPECIAL && (SPECIAL.children_kind==='city' || SPECIAL.children_kind==='district');
+  const rollLbl = SPECIAL?.children_kind==='city' ? '地市卷积' : '区县卷积';
+  const items = (SPECIAL && SPECIAL.items) || [];
+  const catalog = (SPECIAL && SPECIAL.catalog) || [];
+  const pinned = new Set(items.map(i=>i.factor_id));
+  // 供可搜索下拉过滤；paint 重画后仍可用
+  SPECIAL_PICK = catalog.filter(c=>!pinned.has(c.factor_id));
+
+  let h = `<hr class="specialSep"/>
+    <div class="specialHead">
+      <b>🎯 专项目标</b>
+      <div class="specialCombo">
+        <input id="specialFactorInp" type="text" autocomplete="off"
+               placeholder="输入筛选指标…"
+               onfocus="openSpecialDrop()"
+               oninput="filterSpecialDrop()"
+               onkeydown="specialComboKey(event)"/>
+        <input type="hidden" id="specialFactorSel" value=""/>
+        <div id="specialDrop" class="specialDrop" role="listbox"></div>
+      </div>
+      <input id="specialTgtInp" type="number" min="0" step="any" placeholder="本期目标" style="width:88px"/>
+      <button type="button" class="primary" onclick="addSpecialPin()">设置</button>
+      <span class="muted" style="font-size:11px">本级设置后，下级自动出现该专项</span>
+    </div>`;
+
+  if(!items.length){
+    h += `<p class="muted" style="font-size:12px;margin:0">本周期暂无专项目标。省设置后全市/区县都会看到。</p>`;
+    return h;
+  }
+
+  h += `<table class="sTable"><thead><tr>
+    <th>指标</th><th>来源</th><th>本期实际</th><th>本期目标</th>
+    ${showRoll?`<th>${rollLbl}</th>`:''}<th>完成率</th><th></th>
+  </tr></thead><tbody>`;
+
+  items.forEach(it=>{
+    const act = it.actual;
+    const rate = it.rate;
+    const col = rate!=null ? rateColor(Math.round(rate)) : '';
+    const bar = rate!=null
+      ? `<span class="pBar"><span class="pBarF ${col}" style="width:${Math.min(rate,100)}%"></span></span><span class="pct ${col}">${rate}%</span>`
+      : '—';
+    const actTxt = act==null ? '—' : (Number.isInteger(act) ? act.toLocaleString() : Number(act).toLocaleString());
+    const unit = it.unit ? ` ${escAttr(it.unit)}` : '';
+    const rm = it.can_remove
+      ? `<button type="button" class="rmSpecial" title="取消本级设置" onclick="removeSpecialPin('${escAttr(it.factor_id)}')">✕</button>`
+      : '';
+    const fid = escAttr(it.factor_id);
+    h += `<tr>
+      <td><b>${escAttr(it.name)}</b></td>
+      <td><span class="srcTag">${escAttr(it.source_label)}</span></td>
+      <td>${actTxt}${unit}</td>
+      <td><span class="tgtCell"><input class="tgtInput" type="number" value="${it.target??''}"
+            placeholder="填目标" onchange="saveSpecialTarget('${fid}',this.value)"></span></td>
+      ${showRoll?specialRollCell(it):''}
+      <td>${bar}</td>
+      <td>${rm}</td>
+    </tr>`;
+  });
+  h += `</tbody></table>
+    <div class="caveat" style="background:#f6ffed;border-color:#b7eb8f;color:#274e13">
+      📎 专项目标取自关键因素指标库；完成率 = 本期实际 ÷ 本期目标。
+      省设置的专项地市/区县必须出现；市设置的专项省不必遵守。
+      可加总单位（次/家）显示下级目标卷积，差额不写回本级。
+    </div>`;
+  return h;
+}
+
+let SPECIAL_PICK = [];
+let _specialHi = -1;
+
+function specialPickFiltered(){
+  const q = ((document.getElementById('specialFactorInp')||{}).value || '')
+    .trim().toLowerCase();
+  if(!q) return SPECIAL_PICK.slice();
+  return SPECIAL_PICK.filter(c=>{
+    const blob = `${c.name||''} ${c.unit||''} ${c.factor_id||''}`.toLowerCase();
+    return blob.includes(q);
+  });
+}
+
+function openSpecialDrop(){
+  renderSpecialDropList(specialPickFiltered());
+  const drop = document.getElementById('specialDrop');
+  if(drop) drop.classList.add('open');
+}
+
+function closeSpecialDrop(){
+  const drop = document.getElementById('specialDrop');
+  if(drop) drop.classList.remove('open');
+  _specialHi = -1;
+}
+
+function filterSpecialDrop(){
+  // 用户改了文字 → 作废已选 id，避免名实不符
+  const hid = document.getElementById('specialFactorSel');
+  if(hid) hid.value = '';
+  const list = specialPickFiltered();
+  _specialHi = list.length ? 0 : -1;
+  renderSpecialDropList(list);
+}
+
+function renderSpecialDropList(list){
+  const drop = document.getElementById('specialDrop');
+  if(!drop) return;
+  if(!SPECIAL_PICK.length){
+    drop.innerHTML = '<div class="empty">无可添加因子</div>';
+  }else if(!list.length){
+    drop.innerHTML = '<div class="empty">无匹配指标</div>';
+  }else{
+    drop.innerHTML = list.map((c,i)=>
+      `<button type="button" class="opt${i===_specialHi?' on':''}" role="option"
+         data-id="${escAttr(c.factor_id)}"
+         onmousedown="event.preventDefault();pickSpecialFactor('${escAttr(c.factor_id)}')">
+         ${escAttr(c.name)}<span class="u">${escAttr(c.unit||'')}</span>
+       </button>`
+    ).join('');
+  }
+  drop.classList.add('open');
+}
+
+function pickSpecialFactor(factor_id){
+  const c = SPECIAL_PICK.find(x=>x.factor_id===factor_id);
+  const inp = document.getElementById('specialFactorInp');
+  const hid = document.getElementById('specialFactorSel');
+  if(hid) hid.value = factor_id || '';
+  if(inp && c) inp.value = `${c.name}${c.unit?`（${c.unit}）`:''}`;
+  closeSpecialDrop();
+}
+
+function specialComboKey(ev){
+  const drop = document.getElementById('specialDrop');
+  if(!drop) return;
+  const list = specialPickFiltered();
+  if(ev.key==='ArrowDown'){
+    ev.preventDefault();
+    if(!list.length){ openSpecialDrop(); return; }
+    _specialHi = (_specialHi + 1) % list.length;
+    renderSpecialDropList(list);
+    const on = drop.querySelector('.opt.on');
+    if(on) on.scrollIntoView({block:'nearest'});
+  }else if(ev.key==='ArrowUp'){
+    ev.preventDefault();
+    if(!list.length){ openSpecialDrop(); return; }
+    _specialHi = (_specialHi - 1 + list.length) % list.length;
+    renderSpecialDropList(list);
+    const on = drop.querySelector('.opt.on');
+    if(on) on.scrollIntoView({block:'nearest'});
+  }else if(ev.key==='Enter'){
+    ev.preventDefault();
+    if(_specialHi>=0 && list[_specialHi]) pickSpecialFactor(list[_specialHi].factor_id);
+  }else if(ev.key==='Escape'){
+    closeSpecialDrop();
+  }
+}
+
+// 点空白关闭专项下拉
+document.addEventListener('click', (ev)=>{
+  const combo = ev.target && ev.target.closest && ev.target.closest('.specialCombo');
+  if(!combo) closeSpecialDrop();
+});
+
+async function addSpecialPin(){
+  if(!apiAvailable){ alert('未连接服务器'); return; }
+  const sel = document.getElementById('specialFactorSel');
+  const inp = document.getElementById('specialTgtInp');
+  let factor_id = (sel && sel.value) || '';
+  // 若只输入了文字未点选：唯一命中则自动采用
+  if(!factor_id){
+    const list = specialPickFiltered();
+    if(list.length===1) factor_id = list[0].factor_id;
+  }
+  if(!factor_id){ alert('请从列表中选择指标'); return; }
+  const s = (inp && inp.value || '').trim();
+  const target = s==='' ? null : parseFloat(s);
+  if(target!=null && (isNaN(target) || target<0)) return;
+  try{
+    SPECIAL = await apiPost(`/special-targets${scopeQS()}`, {factor_id, target});
+    // 同步本地 factor_targets，关键因素区立刻一致
+    if(target!=null){
+      const it = (SPECIAL.items||[]).find(x=>x.factor_id===factor_id);
+      if(it && it.conv_key){
+        const uiMap = {a2t_visit:'visit',a2t_visit_dahua:'visitD',a2t_visit_dealer:'visitA',
+          a2t_meet:'meet',a2t_fo:'fo',a2v1_new_open:'newOpen',
+          a2t_churn_visit:'churnVisit',a2t_churn_recover:'churnRecover',
+          a2t_churn_visit_recover:'churnVisitRecover'};
+        const fk = uiMap[factor_id];
+        if(fk){
+          const m=lsGet('factor_targets')||{};
+          m[`${geoKey()}/${periodKey()}/${it.conv_key}/${fk}`]=target;
+          lsSet('factor_targets',m);
+        }
+      }
+    }
+    paint();
+  }catch(e){ alert('设置失败：'+(e.message||e)); }
+}
+
+async function saveSpecialTarget(factor_id, val){
+  if(!apiAvailable) return;
+  const s = (val??'').toString().trim();
+  const target = s==='' ? null : parseFloat(s);
+  if(target!=null && (isNaN(target) || target<0)) return;
+  try{
+    SPECIAL = await apiPut(`/special-targets${scopeQS()}`, {factor_id, target});
+    const uiMap = {a2t_visit:['a2t','visit'],a2t_visit_dahua:['a2t','visitD'],
+      a2t_visit_dealer:['a2t','visitA'],a2t_meet:['a2t','meet'],
+      a2t_fo:['a2v1','fo'],a2v1_new_open:['a2v1','newOpen'],
+      a2t_churn_visit:['a2t','churnVisit'],a2t_churn_recover:['a2t','churnRecover'],
+      a2t_churn_visit_recover:['a2t','churnVisitRecover']};
+    const pair = uiMap[factor_id];
+    if(pair){
+      const m=lsGet('factor_targets')||{};
+      const key=`${geoKey()}/${periodKey()}/${pair[0]}/${pair[1]}`;
+      if(target==null) delete m[key]; else m[key]=target;
+      lsSet('factor_targets',m);
+    }
+    paint();
+  }catch(e){ alert('保存失败：'+(e.message||e)); }
+}
+
+async function removeSpecialPin(factor_id){
+  if(!apiAvailable) return;
+  if(!confirm('取消本级对该专项的设置？下级若仅继承本级，将不再看到该项。')) return;
+  try{
+    SPECIAL = await apiDelete(`/special-targets${scopeQS()}&factor_id=${encodeURIComponent(factor_id)}`);
+    paint();
+  }catch(e){ alert('取消失败：'+(e.message||e)); }
 }
 
 // ── Todo / question helpers (per geo + period) ────────────────────────────────
@@ -2349,6 +2662,19 @@ async function apiPost(path,body){
   if(!r.ok) throw new Error(await r.text());
   return r.json();
 }
+async function apiPut(path,body){
+  const r=await fetch(API+path,{method:'PUT',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(r.status===401){ gotoLogin(); throw new Error('未登录'); }
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+async function apiDelete(path){
+  const r=await fetch(API+path,{method:'DELETE'});
+  if(r.status===401){ gotoLogin(); throw new Error('未登录'); }
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
 
 // Collect every user-editable value scoped to the current geo+period into one slice
 function buildSlice(){
@@ -2457,6 +2783,7 @@ function render(){
   loadFactorValues().then(paint);
   loadTargets().then(paint);
   loadRollup().then(paint);   // 卷积要遍历全部下级，最慢，单独走
+  loadSpecial().then(paint);
 }
 
 // Probe the API once; fall back to pure localStorage if the server isn't there
@@ -2471,6 +2798,7 @@ function render(){
     await loadFactorValues();// 关键因素真实值
     await loadTargets();     // 下发目标（全年只读 + 本期预设）
     await loadRollup();      // 下级卷积目标
+    await loadSpecial();     // 专项目标
     paint();
     await loadSlice();
     await loadWeekRollup();

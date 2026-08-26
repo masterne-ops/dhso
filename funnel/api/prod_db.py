@@ -16,6 +16,15 @@
   4 已激活     上表再筛 服务商等级 ≥ v2（签约口径）
   5 高级服务商 上表再筛 服务商等级 ≥ v3（V3~V5 合并）
 
+存量随所选周期动：授权看「签约日期 ≤ 期末」。
+V1+/V2+/V3+ 的期末与增量时间轴：
+  V1 —— 当年筛后 SO（安装红包）第一台上线日
+  V2 —— 服务商管理表「激活时间」
+  V3 —— 当年筛后 SO 累计货值首次 ≥ 1 万的日期
+SO 只计 国内产品线二级 ∈ {IPC, 无线摄像机, 球机, 通用存储}，排除名称含「丰视」；
+只用当年数据，不用终身累计。档位本身仍看管理表「服务商等级」。
+城市总量无历史切片，始终用当前市场天花板。
+
 V1 单独成一阶的理由：授权→V1 是「签约后首次开单」，V1→V2 才是「激活」，两跳的
 业务抓手不同（前者靠首单礼，后者靠激活台数解锁的转化红包），合成一跳看不出卡在
 哪一步。五阶仍同源同口径、逐层收紧，转化率恒 ≤100%。
@@ -37,8 +46,9 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 # 生产库路径。服务器上是 /opt/so-data-analytics/db/product_flow.db，
 # 本地开发机没有这个库（或为 0 字节占位），此时全部降级。
@@ -80,6 +90,112 @@ def _cert_filter(cert: Optional[str]) -> str:
 # 不合规值，这类记录 rank 为 NULL，因而不会落进任何 ≥N 的档位。
 TIER_RANK = ("CASE WHEN lower(COALESCE(服务商等级,'')) LIKE 'v_%' "
              "THEN CAST(substr(lower(服务商等级), 2, 1) AS INTEGER) END")
+
+# 期末存量 / 增量的时间轴：
+#   授权 —— 签约日期
+#   V1   —— 当年筛后 SO 第一台（install_redpack）
+#   V2   —— 管理表激活时间
+#   V3+  —— 当年筛后 SO 累计首次 ≥ 1 万
+# 档位本身仍用 provider_contract.服务商等级。
+
+# SO 计入范围（金总口径）：IPC / 无线摄像机 / 球机 / NVR(通用存储)，排除丰视。
+SO_LINE_FILTER = (
+    "国内产品线二级 IN ('IPC', '无线摄像机', '球机', '通用存储') "
+    "AND COALESCE(产品名称, '') NOT LIKE '%丰视%'"
+)
+V3_SO_THRESHOLD = 10000
+
+
+def _so_year(end: Optional[str], start: Optional[str] = None) -> str:
+    """SO 按自然年切；优先期末年份。"""
+    for d in (end, start):
+        if d and len(d) >= 4 and d[:4].isdigit():
+            return d[:4]
+    return "2026"
+
+
+def _ymd(v: Any) -> Optional[str]:
+    if v is None:
+        return None
+    s = str(v).strip()
+    if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+        return s[:10]
+    return None
+
+
+def _prod_file_stamp() -> str:
+    try:
+        st = PROD_DB.stat()
+        return f"{int(st.st_mtime)}:{st.st_size}"
+    except OSError:
+        return "missing"
+
+
+_SO_MEM: Dict[Tuple[str, str, str], Dict[str, Dict[str, Optional[str]]]] = {}
+_SO_LOCK = threading.Lock()
+
+
+def _build_so_events(year: str) -> Dict[str, Dict[str, Optional[str]]]:
+    """扫当年筛后 install_redpack，得到每家 first_so / v3_time。"""
+    out: Dict[str, Dict[str, Optional[str]]] = {}
+    run: Dict[str, float] = {}
+    try:
+        with _conn() as conn:
+            rows = conn.execute(
+                f"""SELECT 上线客户编码 AS code, 上线时间 AS t,
+                           COALESCE(产品序列号, '') AS sn,
+                           COALESCE(产品现有分销价, 0) AS amt
+                    FROM install_redpack
+                    WHERE COALESCE(上线客户编码, '') != ''
+                      AND substr(上线时间, 1, 4) = ?
+                      AND {SO_LINE_FILTER}
+                    ORDER BY 上线客户编码, 上线时间, sn""",
+                (year,),
+            )
+            for r in rows:
+                code = r["code"]
+                day = _ymd(r["t"])
+                amt = float(r["amt"] or 0)
+                slot = out.get(code)
+                if slot is None:
+                    slot = {"first_so": day, "v3_time": None}
+                    out[code] = slot
+                    run[code] = 0.0
+                run[code] += amt
+                if slot["v3_time"] is None and run[code] >= V3_SO_THRESHOLD:
+                    slot["v3_time"] = day
+    except sqlite3.OperationalError:
+        return {}
+    return out
+
+
+def so_events(year: str) -> Dict[str, Dict[str, Optional[str]]]:
+    """
+    当年筛后 SO 事件。生产库文件没变就走内存 / funnel.db 缓存，
+    不每次切周期重扫 50 万行 install_redpack。
+    """
+    stamp = _prod_file_stamp()
+    key = (str(PROD_DB), year, stamp)
+    hit = _SO_MEM.get(key)
+    if hit is not None:
+        return hit
+    with _SO_LOCK:
+        hit = _SO_MEM.get(key)
+        if hit is not None:
+            return hit
+        from .db import load_so_event_cache, save_so_event_cache, init_schema
+        init_schema()
+        cached = load_so_event_cache(year, stamp)
+        if cached is not None:
+            _SO_MEM[key] = cached
+            return cached
+        built = _build_so_events(year)
+        try:
+            save_so_event_cache(year, stamp, built)
+        except sqlite3.Error:
+            pass
+        _SO_MEM[key] = built
+        return built
 
 
 def available() -> bool:
@@ -357,8 +473,8 @@ def funnel_data(city: Optional[str] = None,
     """
     取指定地区的漏斗五阶绝对值。
 
-    ytd    —— 存量口径（截至库内最新数据），五阶全量 + 意向旁注
-    period —— [start, end] 区间内的增量，按日期列落区间统计
+    ytd    —— 期末存量：有 end 时截至该日；档位看管理表等级，时间轴见模块注释
+    period —— 区间增量：V1=当年筛后首台 SO，V2=激活时间，V3=当年筛后过 1 万
     cert   —— 认证维度筛选：'all'(默认) / 'cert' 认证 / 'nocert' 非认证
 
     ⚠️ 认证筛选只作用于 provider_contract 那四阶（授权/V1+/激活/高级）。
@@ -378,7 +494,11 @@ def funnel_data(city: Optional[str] = None,
                  f"WHERE 1=1{gf}", gp)["v"]
 
         # ── 旁注：潜客池（不占漏斗层级，见模块 docstring）──
-        snap_row = q("SELECT MAX(数据时点) v FROM gaode_potential_customer")
+        if end:
+            snap_row = q("SELECT MAX(数据时点) v FROM gaode_potential_customer "
+                         "WHERE 数据时点 <= ?", [end])
+        else:
+            snap_row = q("SELECT MAX(数据时点) v FROM gaode_potential_customer")
         snap = snap_row["v"] if snap_row else None
         intent, intent_signed = 0, 0
         if snap:
@@ -390,51 +510,90 @@ def funnel_data(city: Optional[str] = None,
                 f"WHERE 数据时点 = ? AND COALESCE(客户名称,'') <> ''{gf2}",
                 [snap] + gp2)["v"]
 
-        # ── 2/3/4 授权 / 激活(≥v2) / 高级(≥v3)：provider_contract，排除授牌 ──
-        # 三阶同源同口径，逐层收紧，故 高级 ⊆ 激活 ⊆ 授权 恒成立，转化率必然 ≤100%。
-        # 认证筛选加在这里，pool 不受影响（见函数 docstring）。
         gf3, gp3 = _geo_filter(city, district, "客户城市", "客户区县")
-        cf = _cert_filter(cert)
-        base = f"FROM provider_contract WHERE {NOT_PLAQUE}{gf3}{cf}"
-        authorized = q(f"SELECT COUNT(*) v {base}", gp3)["v"]
-        # V1 以上：签约后「开了张」但还没到激活门槛的那一层。2026-08-01 金总要求
-        # 单独成一阶 —— 授权→V1 是「首次开单」，V1→V2 才是「激活」，两跳的抓手
-        # 不同（前者靠首单礼，后者靠激活台数解锁的转化红包），合成一跳看不出卡在哪。
-        activated_v1 = q(f"SELECT COUNT(*) v {base} AND {TIER_RANK} >= 1", gp3)["v"]
-        activated = q(f"SELECT COUNT(*) v {base} AND {TIER_RANK} >= 2", gp3)["v"]
-        senior = q(f"SELECT COUNT(*) v {base} AND {TIER_RANK} >= 3", gp3)["v"]
+        events = so_events(_so_year(end, start)) if (start or end) else {}
 
-        # 分档明细：不进漏斗，仅供核对与后续下钻
-        tiers = {}
-        for lv in range(6):
-            tiers[f"v{lv}"] = q(
-                f"SELECT COUNT(*) v {base} AND {TIER_RANK} = ?",
-                gp3 + [lv])["v"]
+        rows = conn.execute(
+            f"""SELECT 客户编码 AS code,
+                       date(签约日期) AS signed,
+                       date(激活时间) AS act,
+                       {TIER_RANK} AS rank,
+                       CASE WHEN {CERT_YES} THEN 1 ELSE 0 END AS is_cert
+                FROM provider_contract
+                WHERE {NOT_PLAQUE}{gf3}""",
+            gp3,
+        ).fetchall()
 
-        # ── 周期增量 ──
+        authorized = activated_v1 = activated = senior = 0
+        cert_n = nocert_n = 0
+        tiers = {f"v{lv}": 0 for lv in range(6)}
+        p_auth = p_v1 = p_v2 = p_v3 = 0
+
+        for r in rows:
+            signed, act, rank = r["signed"], r["act"], r["rank"]
+            is_cert = bool(r["is_cert"])
+            ev = events.get(r["code"] or "") or {}
+            first_so, v3_time = ev.get("first_so"), ev.get("v3_time")
+
+            in_cert = True
+            if cert == "cert":
+                in_cert = is_cert
+            elif cert == "nocert":
+                in_cert = not is_cert
+
+            asof_ok = (not end) or (signed is not None and signed <= end)
+            if asof_ok:
+                if is_cert:
+                    cert_n += 1
+                else:
+                    nocert_n += 1
+
+            if not in_cert:
+                continue
+            if asof_ok:
+                authorized += 1
+                if rank is not None:
+                    v1_ok = rank >= 1 and first_so is not None and (
+                        not end or first_so <= end)
+                    v2_ok = rank >= 2 and act is not None and (
+                        not end or act <= end)
+                    v3_ok = (rank >= 3 and v2_ok and v3_time is not None and (
+                        not end or v3_time <= end))
+                    if v1_ok:
+                        activated_v1 += 1
+                    if v2_ok:
+                        activated += 1
+                    if v3_ok:
+                        senior += 1
+                    if rank == 0:
+                        tiers["v0"] += 1
+                    elif rank == 1 and v1_ok:
+                        tiers["v1"] += 1
+                    elif rank == 2 and v2_ok:
+                        tiers["v2"] += 1
+                    elif rank in (3, 4, 5) and v3_ok:
+                        tiers[f"v{rank}"] += 1
+
+            if start and end:
+                if signed is not None and start <= signed <= end:
+                    p_auth += 1
+                if rank is not None:
+                    if rank >= 1 and first_so is not None and start <= first_so <= end:
+                        p_v1 += 1
+                    if rank >= 2 and act is not None and start <= act <= end:
+                        p_v2 += 1
+                    if rank >= 3 and v3_time is not None and start <= v3_time <= end:
+                        p_v3 += 1
+
         period: Dict[str, Optional[int]] = {}
         if start and end:
-            period["authorized"] = q(
-                f"SELECT COUNT(*) v {base} AND date(签约日期) BETWEEN ? AND ?",
-                gp3 + [start, end])["v"]
-            # 等级是当前快照、没有"升档时间"，所以这里用激活时间落区间 + 当前等级
-            # 达标来近似：口径是"本期激活且现处该档"，不等于"本期升到该档"。
-            period["activated_v1"] = q(
-                f"SELECT COUNT(*) v {base} AND {TIER_RANK} >= 1 "
-                f"AND date(激活时间) BETWEEN ? AND ?", gp3 + [start, end])["v"]
-            period["activated"] = q(
-                f"SELECT COUNT(*) v {base} AND {TIER_RANK} >= 2 "
-                f"AND date(激活时间) BETWEEN ? AND ?", gp3 + [start, end])["v"]
-            period["senior"] = q(
-                f"SELECT COUNT(*) v {base} AND {TIER_RANK} >= 3 "
-                f"AND date(激活时间) BETWEEN ? AND ?", gp3 + [start, end])["v"]
-
-        # ── 认证/非认证 各自的授权数（不受当前 cert 筛选影响，供页面显示占比）──
-        base_all = f"FROM provider_contract WHERE {NOT_PLAQUE}{gf3}"
-        cert_split = {
-            "cert": q(f"SELECT COUNT(*) v {base_all} AND {CERT_YES}", gp3)["v"],
-            "nocert": q(f"SELECT COUNT(*) v {base_all} AND {CERT_NO}", gp3)["v"],
-        }
+            period = {
+                "authorized": p_auth,
+                "activated_v1": p_v1,
+                "activated": p_v2,
+                "senior": p_v3,
+            }
+        cert_split = {"cert": cert_n, "nocert": nocert_n}
 
         # ── 数据新鲜度 ──
         fresh = q("SELECT MAX(date(签约日期)) s, MAX(date(激活时间)) a "
@@ -469,6 +628,7 @@ def funnel_data(city: Optional[str] = None,
         "asof": {
             "contract_signed": fresh["s"], "contract_activated": fresh["a"],
             "potential_snapshot": snap,
+            "stock_end": end,
         },
         "notes": {
             "caveats": ([
@@ -481,9 +641,15 @@ def funnel_data(city: Optional[str] = None,
                 "（授权 ⊇ V1+ ⊇ 激活V2+ ⊇ 高级V3+），转化率恒 ≤100%。",
                 "已排除 管理标签='授牌服务商'（无价值客户，业务红线）。",
                 "V3/V4/V5 合并为「高级服务商」，内部分层转化非当前目标。",
-                "等级为当前快照、无升档时间，周期增量口径是"
-                "「本期激活且现处该档」，不等于「本期升到该档」。",
-                "意向（潜客池）为旁注指标，不占漏斗层级：与签约表是独立来源。",
+                "存量按周期期末切片：授权=签约≤期末；V1+=管理表≥V1 且当年筛后首台 SO≤期末；"
+                "V2+=≥V2 且激活时间≤期末；V3+=≥V3 且当年筛后累计过 1 万日≤期末。"
+                "城市总量无历史，仍是当前市场天花板。",
+                "SO 只计 IPC/无线摄像机/球机/通用存储，排除丰视；只用当年货值，不用终身累计。"
+                "首台/过万日按生产库文件变更缓存，切周期不重扫安装红包。",
+                "周期增量：V1=首台 SO 落在本期，V2=激活时间落在本期，V3=过 1 万日落在本期"
+                "（均要求现处对应档位）。",
+                "意向（潜客池）为旁注指标，不占漏斗层级：与签约表是独立来源。"
+                "快照取 ≤ 期末的最近一次。",
             ],
         },
         "source": "prod",

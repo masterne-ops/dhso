@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>漏斗报告</title>
+<style>
+:root { --bg:#f6f7f9; --card:#fff; --text:#1a1a1a; --muted:#666; --line:#e2e5ea;
+  --weak:#c0392b; --warn:#d35400; --ok:#1e8449; --accent:#2563eb; }
+* { box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+  margin:0; background:var(--bg); color:var(--text); line-height:1.5; font-size:14px; }
+.toolbar { position:sticky; top:0; z-index:10; background:#fff; border-bottom:1px solid var(--line);
+  padding:10px 16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.toolbar button { padding:8px 14px; font-size:13px; border:1px solid var(--line); border-radius:6px;
+  background:#fff; cursor:pointer; }
+.toolbar button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+.toolbar button:disabled { opacity:.5; cursor:not-allowed; }
+.toolbar .sp { flex:1; }
+#reportRoot { max-width:1200px; margin:0 auto; padding:16px 16px 48px; }
+header.rpt { background:#1e293b; color:#fff; padding:20px 24px; border-radius:8px; margin-bottom:16px; }
+header.rpt h1 { margin:0 0 6px; font-size:20px; }
+header.rpt p { margin:0; opacity:.85; font-size:13px; }
+.card { background:var(--card); border-radius:8px; padding:16px 18px; margin-bottom:14px;
+  box-shadow:0 1px 3px rgba(0,0,0,.06); }
+.summary { display:flex; flex-wrap:wrap; gap:10px 16px; }
+.summary span { background:#f1f5f9; padding:6px 10px; border-radius:6px; font-size:13px; }
+h2 { margin:0 0 10px; font-size:16px; }
+table { width:100%; border-collapse:collapse; font-size:13px; margin-bottom:10px; }
+th, td { border:1px solid var(--line); padding:6px 8px; text-align:center; }
+th { background:#f8fafc; font-weight:600; }
+.weak { color:var(--weak); font-weight:600; }
+.bench td { color:var(--muted); font-size:12px; }
+.warn { color:var(--warn); font-weight:600; }
+.ok { color:var(--ok); font-weight:600; }
+.op-label { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
+.opinion { min-height:80px; padding:10px 12px; border:1px solid var(--line); border-radius:6px;
+  background:#fffbeb; white-space:pre-wrap; outline:none; }
+.opinion:empty:before { content:attr(data-placeholder); color:#aaa; }
+.opinion:focus { border-color:var(--accent); box-shadow:0 0 0 2px rgba(37,99,235,.15); }
+.note { font-size:12px; color:var(--muted); margin-top:8px; }
+.err { color:var(--weak); padding:24px; text-align:center; }
+nav.rpt-nav { margin-bottom:12px; font-size:13px; }
+nav.rpt-nav a { color:var(--accent); text-decoration:none; margin-right:10px; }
+@media print { .toolbar { display:none; } body { background:#fff; } }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" crossorigin="anonymous"></script>
+</head>
+<body>
+<div class="toolbar">
+  <button type="button" onclick="history.back()">← 返回漏斗</button>
+  <button type="button" class="primary" id="pdfBtn" onclick="exportPdf()" disabled>导出 PDF</button>
+  <span class="sp"></span>
+  <span id="status" class="note" style="margin:0">加载中…</span>
+</div>
+<div id="reportRoot"></div>
+<script>
+const qs = new URLSearchParams(location.search);
+const GEO = qs.get('geo_key') || '';
+const PERIOD = qs.get('period_key') || '';
+let REPORT = null;
+
+function fmtRate(v){ return v==null ? '—' : v.toFixed(1)+'%'; }
+function fmtInt(v){ return v==null ? '—' : String(v); }
+function esc(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+function lsKey(unitKey){ return `funnel-report:${GEO}:${PERIOD}:${unitKey}`; }
+
+function bindOpinion(el, unitKey){
+  const k = lsKey(unitKey);
+  const saved = localStorage.getItem(k);
+  if(saved) el.textContent = saved;
+  el.addEventListener('input', () => localStorage.setItem(k, el.textContent));
+}
+
+function unitBlock(u, d, benchLabel, periodWord, showNav){
+  const y=u.ytd, p=u.period, ev=u.evidence||{};
+  const wt = u.period_target;
+  let authCmp = '—';
+  if(wt != null){
+    const diff = (p.authorized||0) - wt;
+    authCmp = `<span class="${diff>=0?'ok':'warn'}">${diff>=0?'+':''}${diff.toFixed(0)}</span>`;
+  }
+  const rateCells = d.jumps.map(j =>
+    `<td class="${u.weak.includes(j.key)?'weak':''}">${fmtRate(u.rates[j.key])}</td>`).join('');
+  const benchCells = d.jumps.map(j =>
+    `<td>${benchLabel} ${fmtRate(u.benchmark_rates[j.key])}</td>`).join('');
+  const idAttr = showNav ? ` id="unit-${esc(u.key)}"` : '';
+  return `
+  <section class="card unit"${idAttr}>
+    <h2>${esc(u.name)}</h2>
+    <table><thead><tr><th>指标</th><th>期末存量</th><th>${periodWord}增量</th><th>签约目标</th><th>对比</th></tr></thead>
+    <tbody>
+      <tr><td>授权</td><td>${y.authorized}</td><td>${p.authorized}</td><td>${wt!=null?Math.round(wt):'—'}</td><td>${authCmp}</td></tr>
+      <tr><td>V1+</td><td>${y.activated_v1}</td><td>${p.activated_v1}</td><td>—</td><td>—</td></tr>
+      <tr><td>V2+</td><td>${y.activated}</td><td>${p.activated}</td><td>—</td><td>—</td></tr>
+      <tr><td>V3+</td><td>${y.senior}</td><td>${p.senior}</td><td>—</td><td>—</td></tr>
+    </tbody></table>
+    <table><thead><tr><th colspan="${d.jumps.length}">期末转化率（vs ${esc(benchLabel)}）</th></tr>
+      <tr>${d.jumps.map(j=>`<th>${esc(j.label)}</th>`).join('')}</tr></thead>
+    <tbody><tr>${rateCells}</tr><tr class="bench">${benchCells.replace(/<td>/g,'<td>')}</tr></tbody></table>
+    <table><thead><tr><th>跑动</th><th>大华</th><th>代理</th><th>触达客户</th>
+      <th>SO家数</th><th>SO条数</th><th>SO货值</th><th>新增开单</th></tr></thead>
+    <tbody><tr>
+      <td>${ev.visit||0}</td><td>${ev.visit_dahua||0}</td><td>${ev.visit_dealer||0}</td>
+      <td>${ev.visit_customers||0}</td><td>${ev.so_providers||0}</td><td>${ev.so_lines||0}</td>
+      <td>${(ev.so_amount||0).toLocaleString()}</td><td>${ev.new_open||0}</td>
+    </tr></tbody></table>
+    <label class="op-label">分析意见</label>
+    <div class="opinion" contenteditable="true" data-key="${esc(u.key)}" data-placeholder="请填写分析意见…"></div>
+  </section>`;
+}
+
+function render(d){
+  REPORT = d;
+  const h = d.headline;
+  const summarySpans = d.jumps.map(j => `<span><b>${esc(j.label)}</b> ${fmtRate(h.rates[j.key])}</span>`).join('');
+  let overviewHtml = '';
+  if(d.scope === 'province' && d.overview){
+    const rows = d.overview.map(u => {
+      const ev = u.evidence||{};
+      const wt = u.period_target;
+      const gap = wt!=null ? ((u.period.authorized||0)-wt).toFixed(0) : '—';
+      return `<tr>
+        <td>${esc(u.name)}</td>
+        ${d.jumps.map(j=>`<td class="${u.weak.includes(j.key)?'weak':''}">${fmtRate(u.rates[j.key])}</td>`).join('')}
+        <td>${u.period.authorized}</td><td>${wt!=null?Math.round(wt):'—'}</td><td>${gap}</td>
+        <td>${u.period.activated_v1}</td><td>${u.period.activated}</td><td>${u.period.senior}</td>
+        <td>${ev.visit||0}</td><td>${(ev.so_amount||0).toLocaleString()}</td>
+      </tr>`;
+    }).join('');
+    overviewHtml = `
+    <div class="card">
+      <h2>各地市一览</h2>
+      <table><thead><tr>
+        <th>地市</th>${d.jumps.map(j=>`<th>${esc(j.label)}</th>`).join('')}
+        <th>新签</th><th>目标</th><th>差值</th><th>V1+</th><th>V2+</th><th>V3+</th><th>跑动</th><th>SO货值</th>
+      </tr></thead><tbody>${rows}</tbody></table>
+    </div>`;
+    const nav = d.overview.map(u => `<a href="#unit-${esc(u.key)}">${esc(u.name)}</a>`).join(' · ');
+    overviewHtml += `<nav class="rpt-nav card">跳转：${nav}</nav>`;
+  }
+
+  const unitsHtml = d.scope === 'province'
+    ? d.units.slice(1).map(u => unitBlock(u, d, d.benchmark_label, d.period_word, true)).join('')
+    : unitBlock(d.headline, d, d.benchmark_label, d.period_word, false);
+
+  document.getElementById('reportRoot').innerHTML = `
+    <header class="rpt">
+      <h1>服务商转化漏斗 · ${esc(d.report_title)} · ${esc(d.scope_label)}</h1>
+      <p>${esc(d.period_range)}（${esc(d.period_key)}）· 生成 ${esc(d.generated)}</p>
+    </header>
+    <div class="card">
+      <h2>${esc(d.scope_label)}概要</h2>
+      <div class="summary">${summarySpans}</div>
+      <p class="note">期末存量截至 ${esc(d.end)}；${esc(d.target_note)}。SO 来自安装红包（筛后 IPC/无线/球机/通用存储，排除丰视）。</p>
+      <label class="op-label">总体小结（请填写）</label>
+      <div class="opinion" contenteditable="true" data-key="summary" data-placeholder="请填写总体分析小结…"></div>
+    </div>
+    ${overviewHtml}
+    ${unitsHtml}
+    <p class="note card">转化率 &lt; ${d.weak_threshold}% 标红。意见框修改后保存在本机浏览器。</p>
+  `;
+
+  document.querySelectorAll('.opinion').forEach(el => bindOpinion(el, el.dataset.key));
+  document.getElementById('status').textContent = `${d.scope_label} · ${d.period_range}`;
+  document.getElementById('pdfBtn').disabled = false;
+}
+
+async function load(){
+  if(!GEO || !PERIOD){
+    document.getElementById('reportRoot').innerHTML = '<p class="err">缺少 geo_key 或 period_key 参数</p>';
+    document.getElementById('status').textContent = '参数错误';
+    return;
+  }
+  try{
+    const r = await fetch(`/api/funnel/report-data?geo_key=${encodeURIComponent(GEO)}&period_key=${encodeURIComponent(PERIOD)}`, {credentials:'same-origin'});
+    if(!r.ok) throw new Error(await r.text());
+    render(await r.json());
+  }catch(e){
+    document.getElementById('reportRoot').innerHTML = `<p class="err">加载失败：${esc(String(e.message||e))}</p>`;
+    document.getElementById('status').textContent = '加载失败';
+  }
+}
+
+async function exportPdf(){
+  const btn = document.getElementById('pdfBtn');
+  btn.disabled = true;
+  btn.textContent = '生成中…';
+  try{
+    const root = document.getElementById('reportRoot');
+    const canvas = await html2canvas(root, { scale:2, useCORS:true, logging:false, backgroundColor:'#f6f7f9' });
+    const img = canvas.toDataURL('image/jpeg', 0.92);
+    const pdf = new jspdf.jsPDF({ orientation:'p', unit:'mm', format:'a4' });
+    const pw = pdf.internal.pageSize.getWidth();
+    const ph = pdf.internal.pageSize.getHeight();
+    const iw = pw;
+    const ih = canvas.height * pw / canvas.width;
+    let left = ih;
+    let y = 0;
+    pdf.addImage(img, 'JPEG', 0, y, iw, ih);
+    left -= ph;
+    while(left > 0){
+      y -= ph;
+      pdf.addPage();
+      pdf.addImage(img, 'JPEG', 0, y, iw, ih);
+      left -= ph;
+    }
+    const name = (REPORT ? `${REPORT.scope_label}_${REPORT.period_key}` : 'report') + '.pdf';
+    pdf.save(name);
+  }catch(e){
+    alert('PDF 导出失败：' + (e.message||e));
+  }finally{
+    btn.disabled = false;
+    btn.textContent = '导出 PDF';
+  }
+}
+
+load();
+</script>
+</body>
+</html>

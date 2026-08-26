@@ -21,7 +21,10 @@ from __future__ import annotations
 import sqlite3
 from typing import Any, Callable, Dict, List, Optional
 
-from .prod_db import _conn, _geo_filter, available
+from .prod_db import (
+    SO_LINE_FILTER, TIER_RANK,
+    _conn, _geo_filter, available,
+)
 
 # 业务红线：授牌服务商是无价值客户，不进任何名单/口径（docs/数据库说明.md:267）。
 # prod_db.NOT_PLAQUE 是不带表别名的版本；这里 join 了两张表，列名必须限定到 p.
@@ -106,19 +109,28 @@ def salesman_coupon_rate(conn, city, district, start, end):
 
 
 # ── 跑动次数 ───────────────────────────────────────────────────────────────────
-# 载体 visit_record（业务员跑动打卡明细，44,129 行）。自带 拜访客户城市/区县，
-# 不用 join。
+# 载体优先 visit_record_v（UNION 代理商 visit_record + 大华 dahua_visit_record，
+# 大华行映射后「打卡人所属公司」为空）。旧库/合成库没有视图时回落 visit_record。
 #
 # 两类打卡人，数据源不同、口径必须分开（见 docs/数据库说明.md:188-190）：
-#   🏢 大华分销经理    打卡人所属公司 为空   源「SMB客户拜访活动明细表」(2026 起)
-#   🏪 代理商业务员    打卡人所属公司 非空   源「拜访活动明细表」
-# 判定沿用 src/_views.py:128 的既有口径，全库一致。
+#   🏢 大华分销经理    打卡人所属公司 为空   源「SMB客户拜访活动明细」→ dahua_visit_record
+#   🏪 代理商业务员    打卡人所属公司 非空   源「拜访活动明细表」→ visit_record
+# 判定沿用 src/_views.py 的既有口径，全库一致。
 IS_DAHUA = "COALESCE(打卡人所属公司,'') = ''"
 IS_DEALER = "COALESCE(打卡人所属公司,'') <> ''"
 
 # ⚠️ 时间列必须用 COALESCE(活动创建时间, 拜访时间)：拜访时间 只到日、带
 # 08:00:00 占位，直接用会把周界上的记录算到隔壁周去（docs/数据库说明.md:195）。
 VISIT_TIME = "date(COALESCE(活动创建时间, 拜访时间))"
+
+
+def visit_source(conn) -> str:
+    """生产库用 visit_record_v；合成/旧库无视图时用 visit_record。"""
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type IN ('table','view') "
+        "AND name = 'visit_record_v' LIMIT 1"
+    ).fetchone()
+    return "visit_record_v" if row else "visit_record"
 
 
 def _visit_count(conn, city, district, start, end,
@@ -129,11 +141,12 @@ def _visit_count(conn, city, district, start, end,
     跑动是"次数"型因子而非"率"型：没有天然分母。value 直接是次数，
     单位「次」，目标由用户设。
     """
+    src = visit_source(conn)
     gf, gp = _geo_filter(city, district, "拜访客户城市", "拜访客户区县")
     row = conn.execute(
         f"""SELECT COUNT(*) n, COUNT(DISTINCT 客户编码) customers,
                    COUNT(DISTINCT 打卡人姓名) people
-            FROM visit_record
+            FROM {src}
             WHERE {who}{gf} AND {VISIT_TIME} BETWEEN ? AND ?""",
         gp + [start, end]).fetchone()
     n = row["n"] or 0
@@ -203,6 +216,177 @@ def new_open_providers(conn, city, district, start, end):
     }
 
 
+# ── 流失客户（授权 + 认证）────────────────────────────────────────────────────
+# 流失定义（两类取并集，as_of 日评估）：
+#   A. 上年有筛后 SO，当年截至 as_of 无筛后 SO
+#   B. 当年达到 V2（激活时间落在当年且 ≤ as_of，档位 ≥ v2），
+#      且截至 as_of 最近一次筛后 SO 早于 as_of−90 天（或从未 SO）
+# 采购 = install_redpack 筛后 SO（与漏斗 V1/V3 同源）。
+# 主体 = 授权（有签约日）∩ 认证（协议类型 LIKE %认证%）∩ 非授牌。
+
+from datetime import date as _date, timedelta as _timedelta
+
+SO_LINE_R = (SO_LINE_FILTER
+             .replace("国内产品线二级", "r.国内产品线二级")
+             .replace("产品名称", "r.产品名称"))
+CERT_YES_P = "COALESCE(p.协议类型,'') LIKE '%认证%'"
+TIER_RANK_P = TIER_RANK.replace("服务商等级", "p.服务商等级")
+
+
+def _year_bounds(end: str) -> tuple:
+    """按期末年份切「当年 / 上年」。"""
+    y = int(str(end)[:4])
+    return str(y), f"{y}-01-01", f"{y + 1}-01-01", f"{y - 1}-01-01"
+
+
+def _day_add(day: str, delta: int) -> str:
+    return (_date.fromisoformat(str(day)[:10]) + _timedelta(days=delta)).isoformat()
+
+
+def _churn_pred_sql(as_of_expr: str, y0: str, prev0: str) -> str:
+    """
+    相对 as_of_expr（SQL 日期表达式或 'YYYY-MM-DD' 字面量）判定是否流失。
+    外层需提供 auth 别名 a（code / act_day / tier）。
+    """
+    type_a = f"""(
+      EXISTS (
+        SELECT 1 FROM install_redpack r
+        WHERE r.上线客户编码 = a.code AND {SO_LINE_R}
+          AND date(r.上线时间) >= '{prev0}' AND date(r.上线时间) < '{y0}'
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM install_redpack r
+        WHERE r.上线客户编码 = a.code AND {SO_LINE_R}
+          AND date(r.上线时间) >= '{y0}' AND date(r.上线时间) <= {as_of_expr}
+      )
+    )"""
+    type_b = f"""(
+      a.act_day IS NOT NULL
+      AND a.act_day >= '{y0}' AND a.act_day <= {as_of_expr}
+      AND COALESCE(a.tier, -1) >= 2
+      AND NOT EXISTS (
+        SELECT 1 FROM install_redpack r
+        WHERE r.上线客户编码 = a.code AND {SO_LINE_R}
+          AND date(r.上线时间) > date({as_of_expr}, '-90 days')
+          AND date(r.上线时间) <= {as_of_expr}
+      )
+    )"""
+    return f"({type_a} OR {type_b})"
+
+
+def _auth_cert_from(city, district):
+    gf, gp = _geo_filter(city, district, "p.客户城市", "p.客户区县")
+    sql = f"""
+      SELECT p.客户编码 AS code,
+             date(p.激活时间) AS act_day,
+             {TIER_RANK_P} AS tier
+      FROM provider_contract p
+      WHERE {NOT_PLAQUE_P} AND {CERT_YES_P}
+        AND p.签约日期 IS NOT NULL{gf}
+    """
+    return sql, gp
+
+
+def churn_visit_count(conn, city, district, start, end):
+    """
+    流失客户跑动数量：周期内对「拜访当日已流失」的授权认证服务商的打卡次数
+    （大华 + 代理商）。
+    """
+    _, y0, _, prev0 = _year_bounds(end)
+    auth_sql, gp = _auth_cert_from(city, district)
+    src = visit_source(conn)
+    vgf, vgp = _geo_filter(city, district, "v.拜访客户城市", "v.拜访客户区县")
+    pred = _churn_pred_sql("v.vday", y0, prev0)
+    row = conn.execute(
+        f"""SELECT COUNT(*) n,
+                   COUNT(DISTINCT v.code) customers
+            FROM (
+              SELECT 客户编码 AS code, {VISIT_TIME} AS vday
+              FROM {src} v
+              WHERE 1=1{vgf} AND {VISIT_TIME} BETWEEN ? AND ?
+            ) v
+            JOIN ({auth_sql}) a ON a.code = v.code
+            WHERE {pred}""",
+        vgp + [start, end] + gp,
+    ).fetchone()
+    n = int(row["n"] or 0)
+    return {
+        "value": n, "num": n, "den": None,
+        "customers": int(row["customers"] or 0),
+        "label": "流失客户跑动数量",
+        "tip": f"拜访当日已流失的授权认证服务商 · 打卡 {n} 次",
+        "kind": "churn_visit",
+    }
+
+
+def churn_recover_count(conn, city, district, start, end):
+    """
+    流失客户挽回数量：周期首日 D 之前已流失的客户，在本期内有筛后 SO 上线。
+    as_of = D−1。
+    """
+    _, y0, _, prev0 = _year_bounds(end)
+    as_of = _day_add(start, -1)
+    auth_sql, gp = _auth_cert_from(city, district)
+    pred = _churn_pred_sql(f"'{as_of}'", y0, prev0)
+    row = conn.execute(
+        f"""SELECT COUNT(DISTINCT a.code) n
+            FROM ({auth_sql}) a
+            WHERE {pred}
+              AND EXISTS (
+                SELECT 1 FROM install_redpack r
+                WHERE r.上线客户编码 = a.code AND {SO_LINE_R}
+                  AND date(r.上线时间) BETWEEN ? AND ?
+              )""",
+        gp + [start, end],
+    ).fetchone()
+    n = int(row["n"] or 0)
+    return {
+        "value": n, "num": n, "den": None,
+        "customers": n,
+        "label": "流失客户挽回数量",
+        "tip": f"期前已流失、本期有筛后 SO · {n} 家（as_of={as_of}）",
+        "kind": "churn_recover",
+        "as_of": as_of,
+    }
+
+
+def churn_visit_recover_count(conn, city, district, start, end):
+    """
+    流失客户跑动挽回：跑动当日 D 该客户已流失，且 D 日及之后（至期末）有筛后 SO。
+    按服务商去重。
+    """
+    _, y0, _, prev0 = _year_bounds(end)
+    auth_sql, gp = _auth_cert_from(city, district)
+    src = visit_source(conn)
+    vgf, vgp = _geo_filter(city, district, "v.拜访客户城市", "v.拜访客户区县")
+    pred = _churn_pred_sql("v.vday", y0, prev0)
+    row = conn.execute(
+        f"""SELECT COUNT(DISTINCT v.code) n
+            FROM (
+              SELECT 客户编码 AS code, {VISIT_TIME} AS vday
+              FROM {src} v
+              WHERE 1=1{vgf} AND {VISIT_TIME} BETWEEN ? AND ?
+            ) v
+            JOIN ({auth_sql}) a ON a.code = v.code
+            WHERE {pred}
+              AND EXISTS (
+                SELECT 1 FROM install_redpack r
+                WHERE r.上线客户编码 = v.code AND {SO_LINE_R}
+                  AND date(r.上线时间) >= v.vday
+                  AND date(r.上线时间) <= ?
+              )""",
+        vgp + [start, end] + gp + [end],
+    ).fetchone()
+    n = int(row["n"] or 0)
+    return {
+        "value": n, "num": n, "den": None,
+        "customers": n,
+        "label": "流失客户跑动挽回",
+        "tip": f"跑动当日已流失且当日及之后有 SO · {n} 家",
+        "kind": "churn_visit_recover",
+    }
+
+
 # ── 因子注册表 ─────────────────────────────────────────────────────────────────
 # id 与 funnel_factor_defs.id 对应；只有在此注册了取数函数的 auto 因子才算得出值。
 FETCHERS: Dict[str, Callable] = {
@@ -215,6 +399,9 @@ FETCHERS: Dict[str, Callable] = {
     "a2t_visit_dahua": visit_dahua,
     "a2t_visit_dealer": visit_dealer,
     "a2v1_new_open": new_open_providers,
+    "a2t_churn_visit": churn_visit_count,
+    "a2t_churn_recover": churn_recover_count,
+    "a2t_churn_visit_recover": churn_visit_recover_count,
 }
 
 # 因子定义（写入 funnel_factor_defs 的种子数据）。
@@ -234,6 +421,13 @@ SEED_DEFS: List[Dict[str, Any]] = [
      "unit": "次", "source": "auto", "display_order": 2},
     {"id": "a2t_visit_dealer", "conv_key": "a2t", "name": "跑动次数（代理商）",
      "unit": "次", "source": "auto", "display_order": 3},
+    {"id": "a2t_churn_visit", "conv_key": "a2t", "name": "流失客户跑动数量",
+     "unit": "次", "source": "auto", "display_order": 4},
+    {"id": "a2t_churn_recover", "conv_key": "a2t", "name": "流失客户挽回数量",
+     "unit": "家", "source": "auto", "display_order": 5},
+    {"id": "a2t_churn_visit_recover", "conv_key": "a2t",
+     "name": "流失客户跑动挽回",
+     "unit": "家", "source": "auto", "display_order": 6},
     {"id": "a2v1_new_open", "conv_key": "a2v1", "name": "新增开单服务商",
      "unit": "家", "source": "auto", "display_order": 5},
 ]

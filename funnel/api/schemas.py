@@ -12,3 +12,22 @@ class OverviewItemPatch(BaseModel):
     index: int
     done: bool
     text: Optional[str] = None       # 有则按原文校对，防列表已变仍勾错行
+
+
+class SpecialPinPayload(BaseModel):
+    factor_id: str
+    target: Optional[float] = None
+
+
+class SalesEvalPatch(BaseModel):
+    side: str = "all"
+    org: Optional[str] = None
+    person: Optional[str] = None
+    item_id: Optional[str] = None          # 规定动作 id；有则写阈值
+    preset_value: Optional[float] = None   # null = 删除本对象覆盖，回落继承
+    note: Optional[str] = None             # 分析小结
+
+
+class SpecialTargetPayload(BaseModel):
+    factor_id: str
+    target: Optional[float] = None   # null = 清空

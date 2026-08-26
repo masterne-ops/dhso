@@ -127,9 +127,21 @@ ssh root@121.196.152.24 'shred -u /root/so-funnel-creds.txt' # 转达完删掉
 | GET | `/api/funnel/target-values` | `provider_target` 全表 + 节奏占比（诊断用，核对地市命名与占比加总） |
 | GET | `/api/funnel/geo` | 地区树（省 / 11 市 / 97 区县），前端下拉列表数据源 |
 | GET | `/api/funnel/cert-values` | 认证相关三列的取值分布（诊断用，核对判定列） |
-| GET | `/api/funnel/data?geo_key=&period_key=&cert=` | 漏斗五阶绝对值，**从生产库实时取** |
+| GET | `/api/funnel/data?geo_key=&period_key=&cert=` | 漏斗五阶绝对值，**从生产库实时取**（存量截至周期期末，增量落在区间内） |
+| GET | `/sales-eval` | 业务员/代理商能力评估页 |
+| GET | `/api/funnel/sales-eval?geo_key=&period_key=&mode=&subject=` | 评估聚合：`mode=person\|dealer`，双主 KPI + 目的矩阵 + SOP + 排行 |
+| GET | `/api/funnel/special-targets?geo_key=&period_key=` | 专项目标：可见因子钉 + 实际/目标/完成率/下级卷积 |
+| POST | `/api/funnel/special-targets` | 本级设置专项（body: factor_id, target?）；省设则全市/区县自动可见 |
+| PUT | `/api/funnel/special-targets` | 本级填写/清空本期专项目标 |
+| DELETE | `/api/funnel/special-targets?factor_id=` | 取消本级设置的专项（不能取消上级设置的） |
 
 `geo_key` / `period_key` 走 **query 参数**而非路径段：`geo_key` 含 `/` 分隔符（`浙江/杭州市/西湖区`），转义后的斜杠在路由匹配前会被解码，放路径里会 404。
+
+### 业务员能力评估口径摘要
+
+- **必要性跑动占比** = 必要标签次数 / 有标签次数（未标注不进分母）；库内 `拜访目的`（新签/行销/激活/复购）经 `funnel.db.visit_purpose_map` 映射到图上 6 类。
+- **规定动作合规率** = 达标检查项 / 可自动判定项；微信/礼品/困难原因/预算无表 → 「无数据」不进分母。
+- **档位映射**：潜客=有跑动未签约；V0=本周期新签；V1=档位≥v1 或本周期首 SO；V2=v2；V3+=≥v3（与图文案不完全同名，以库内 `服务商等级` 为准）。
 
 ## 生产库取数
 
@@ -154,7 +166,7 @@ ssh root@121.196.152.24 'shred -u /root/so-funnel-creds.txt' # 转达完删掉
  "data":{
    "ytd":{"pool":13591,"intent":6263,"authorized":7755,"activated":3384,"v3":577,"v4":287,"v5":62},
    "period":{"intent":null,"authorized":275,"activated":338,"v3":13,"v4":4,"v5":0},
-   "asof":{"contract_signed":"2026-07-25","contract_activated":"2026-07-25","potential_snapshot":"2026-07-13"},
+   "asof":{"contract_signed":"2026-07-25","contract_activated":"2026-07-25","potential_snapshot":"2026-07-13","stock_end":"2026-07-31"},
    "notes":{"caveats":["..."]}}}
 ```
 
@@ -168,7 +180,9 @@ ssh root@121.196.152.24 'shred -u /root/so-funnel-creds.txt' # 转达完删掉
 | activated 已激活 | 上表再筛 `服务商等级 ≥ v2` | **V2 以上算激活** |
 | senior 高级服务商 | 上表再筛 `服务商等级 ≥ v3` | V3/V4/V5 合并 |
 
-**核心指标 = `penetration` = 授权 ÷ 城市总量**，即品牌在市场客群的渗透率，页面顶部大字显示。
+**核心指标 = `penetration` = 期末授权 ÷ 城市总量**。选某月时授权/已开单/激活/高级是该月末存量。
+档位看管理表 `服务商等级`；时间轴：V1=当年筛后 SO 首台，V2=管理表激活时间，V3=当年筛后累计过 1 万日。
+SO 只计 IPC/无线摄像机/球机/通用存储（排除丰视），只用当年货值。城市总量无历史，分母仍是当前市场天花板。
 
 **V1 为什么单独成一阶：** 授权→V1 是「签约后首次开单」，V1→V2 才是「激活」，两跳的业务抓手不同——前者靠首单礼推动破冰，后者靠激活台数解锁的转化红包。合成一跳就看不出到底卡在「签了不开单」还是「开了单上不了量」，对应的动作也开不出来。前端因此把首单礼因子从 `a2t` 挪到了新的 `a2v1` 跳（因子 id 仍是 `a2t_fo`，那是库里主键，改名会让已存的缓存和用户填的目标失联）。
 
@@ -210,9 +224,9 @@ ssh root@121.196.152.24 'shred -u /root/so-funnel-creds.txt' # 转达完删掉
 
 1. `provider_contract.服务商等级` 是**签约固化口径** v0~v5；视图 `provider_tier_v.服务商等级` 是**货值实测口径**（按累计上线货值现算，最高 v4、**无 v5**）。两套标准不可混用。
 2. 旧版实现拿 `是否激活='Y'` 作分母、签约口径等级作分子，两者不同源（签约挂 v3 的可能从未激活），转化率理论上能算出 >100%。已统一到签约口径。实测全省 V2+ = 3384 与 `是否激活='Y'` 恰好相等，汇总层面看不出问题，但算法是错的。
-3. 等级是当前快照、库里没有「升档时间」，所以 `period.activated` / `period.senior` 的口径是「**本期激活且现处该档**」，不等于「本期升到该档」。
+3. 档位看管理表快照；增量/期末时间轴分叉：**V1**=当年筛后安装红包首台上线日，**V2**=`激活时间`，**V3**=当年筛后 SO 累计首次 ≥1 万的日期。SO 产品线仅 IPC/无线摄像机/球机/通用存储，排除丰视；不用终身累计。
 
-周期增量按 `date(签约日期)` / `date(激活时间)` 落在区间内统计。`period_key` 转区间见 `api/periods.py`：`2026-W31` → 该 ISO 周周一至周日；`2026-07` → 当月首末日。前端 `isoWeekRange()` 与 Python `date.fromisocalendar()` 已对齐验证（含跨年周，`2027-01-01` 属 `2026-W53`）。非法周期键（如 `2026-W54`）返回 422。
+`ytd` 是**期末存量**（各事件日 ≤ 周期末日 + 现处对应档）。`period` 是各事件日落在区间内的增量。周期键转区间见 `api/periods.py`。非法周期键（如 `2026-W54`）返回 422。
 
 生产库不可用时（本地开发机没有该库）`/geo` 返回 `available:false`、`/data` 返回 `source:"unavailable"` + `data:null`，前端自动回落到内置演示地区和演示数据，页面不报错。
 
@@ -223,6 +237,8 @@ ssh root@121.196.152.24 'shred -u /root/so-funnel-creds.txt' # 转达完删掉
 .venv/bin/python api/_verify_factors.py   # 关键因素取数 + 下发目标，造合成库，75 项断言
 .venv/bin/python api/_verify_rollup.py    # 下级目标卷积，造合成生产库+本地库，52 项断言
 .venv/bin/python api/_verify_auth.py      # 多账号 + 地区授权，跑真实 ASGI 请求，60 项断言
+python3 -m api._verify_sales_eval         # 业务员评估：目的映射 / 7 日 SO / V1 回访窗
+python3 -m api._verify_special            # 专项目标：省继承 / 市独立 / 卷积 / 取消权限
 ```
 
 `_verify_auth.py` 用 `TestClient` 发真实 HTTP 请求，不连生产库。覆盖：鉴权已启用、无凭证/错密码/不存在的账号一律 401、`/me` 回报自己的范围、管理员通全省和任意地市、地市账号通本市及其区县、**省级汇总在 5 个接口上都 403**、别人的市双向 403、`POST /state` 越权 403 **且真的没落库**（只看状态码不够）、`/slices` 不传 `geo_key` 时不泄露别人的切片（旁路检查）、`/geo` 在服务端就裁掉别的市、卷积也受限、403 文案说清范围、users.json 里不含任何明文密码。
@@ -251,9 +267,9 @@ ssh root@121.196.152.24 '/opt/so-funnel/venv/bin/python3 /tmp/_verify_live_auth.
 `_verify_factors.py` 覆盖两块。**因子**：券种筛选、已兑换判定、地区下钻（省/市/区县）、地区可加性、周期切分（上期券不进本期）、授牌服务商排除、join 不上的券不计入、「发了券但一张没兑」返回 0% 而「没发券」返回 None 的区分、跑动合计 == 大华 + 代理商、`COALESCE(活动创建时间,拜访时间)` 回落、月末深夜边界、未注册因子返回 None、券种诊断。**目标**：全年取库里值且 `editable:false`、本期 = 全年 × 月节奏、周 = 月 ÷ 当月周数、跨月周按周四归属、地市名去「市」重试命中、区县级全空且可手填、未下达年度不编数、无节奏曲线回落 1/12 并在 notes 说明、12 个月本期目标之和回到全年目标、占比异常大的月份出结转存量提示。合成库的 `kpi_rhythm` 按生产库实际的列序填（指标=业务线、适用范围=具体指标），并塞了一组「服务商激活」节奏作干扰项——若取数把两列写反或漏掉 `适用范围` 条件，断言会失败。
 
 
-覆盖：包含关系逐层收紧、大小写混写等级、空/不合规等级不落档、授牌过滤、地区下钻、周期增量、空周期、无匹配地区不除零；认证维度的可加性（认证+非认证==全部，存量与增量各三阶都验）、认证态下 pool 保持全量、渗透率可加、`split` 不随 mode 变、非法 cert 值兜底按 all、地区×认证交叉。`_verify*.py` 在部署时被 rsync 排除，不上服务器。
+覆盖：包含关系、授牌过滤、地区下钻、V1/V2/V3 时间轴分叉（首台 SO / 激活时间 / 过 1 万）、丰视与交换机不进 SO、期末存量随周期、认证可加性。`_verify*.py` 部署时 rsync 排除。
 
-实测线上（2026-07）：
+线上实测（文档撰写时的库内最新快照；现已改为期末存量，选更早月份数字会小于下表）：
 
 | 地区 | 总量 | 授权 | 激活V2+ | 高级V3+ | 渗透率 |
 |------|------|------|---------|---------|--------|
@@ -274,6 +290,9 @@ ssh root@121.196.152.24 '/opt/so-funnel/venv/bin/python3 /tmp/_verify_live_auth.
 | `a2t_visit` | 授权→激活 | 跑动次数（合计） | ✅ 已接入 |
 | `a2t_visit_dahua` | 授权→激活 | 跑动次数（大华） | ✅ 已接入 |
 | `a2t_visit_dealer` | 授权→激活 | 跑动次数（代理商） | ✅ 已接入 |
+| `a2t_churn_visit` | 授权→激活 | 流失客户跑动数量 | ✅ 已接入 |
+| `a2t_churn_recover` | 授权→激活 | 流失客户挽回数量 | ✅ 已接入 |
+| `a2t_churn_visit_recover` | 授权→激活 | 流失客户跑动挽回 | ✅ 已接入 |
 | `a2v1_new_open` | 授权→已开单 | 新增开单服务商 | ✅ 安装红包首次上线 |
 
 **因子目标一律不预设**（金总 2026-08-01 定）：`SEED_DEFS` 里所有因子的 `default_target` 都留空，前端 `getFactorTarget()` 也不回落演示值。因子目标库里没有下发值，各地区基数差一个量级（跑动次数尤其），任何预设都是拍脑袋的数——空着让用户按地区手填，比给一个看起来权威的假目标好。填过的值按 `geo+period+跳+因子` 存进切片。
@@ -379,6 +398,7 @@ ssh root@121.196.152.24 '/opt/so-funnel/venv/bin/python3 /tmp/_verify_live_auth.
 - `funnel_state` — 切片，**主键 (geo_key, period_key)**，一个地区+周期只有一行，写入走 UPSERT 原地覆盖。同一周期反复修改不产生历史，永远是最新值。
 - `funnel_factor_defs` — 因子定义清单，种子数据见 `factors.SEED_DEFS`（启动时 UPSERT，不覆盖 `enabled`——管理员手工停用的因子重启不会被重新打开）
 - `funnel_factor_value_cache` — 自动因子计算结果缓存，1 小时有效。**只缓存标量 value**；分子/分母等明细不入缓存（随卡券状态变，存下来会给出过期明细），要看明细带 `refresh=true`
+- `visit_purpose_map` — 拜访目的 token → 标准跑动标签（必要性 Y/N）；启动时种子：新签→建联拓客、行销→销售产品讲解、激活→销售产品体验、复购→日常维护
 
 ## 离线降级
 

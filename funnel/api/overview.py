@@ -7,7 +7,7 @@
 取数约束：
 - 不能对每个单位串行打 /data + /state + /factor-values（11 市 × 90 区县会打挂）。
 - 生产库按区县 GROUP BY 两三次扫完；切片按 period_key 一次读出。
-- 短板用 YTD 转化率 < 70%（与漏斗页 renderFocus 同口径），不做因子库热力图。
+- 短板用期末存量转化率 < 70%（与漏斗页 renderFocus 同口径），不做因子库热力图。
 """
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from .db import (
 from .periods import period_label, period_meta, weeks_of_month
 from .prod_db import (
     NOT_PLAQUE, TIER_RANK, TARGET_CITY_ALL,
+    so_events, _so_year,
     available as prod_available, geo_tree, _conn,
 )
 from .users import User, authorize_geo, scoped_geo_tree
@@ -147,7 +148,7 @@ def _lookup_target(by_city: Dict[str, Any], city: Optional[str]):
 
 def _load_prod_bundle(start: str, end: str, year: int, month: int
                       ) -> Optional[Dict[str, Any]]:
-    """三次生产库扫描：体量、签约（含本期增量）、全年目标 + 当月节奏。"""
+    """三次生产库扫描：体量、期末存量 + 本期增量、全年目标 + 当月节奏。"""
     if not prod_available():
         return None
     with _conn() as conn:
@@ -157,28 +158,48 @@ def _load_prod_bundle(start: str, end: str, year: int, month: int
             "WHERE 城市 IS NOT NULL AND 城市 <> '' "
             "GROUP BY 城市, 区县"
         ).fetchall()
-        ytd_rows = conn.execute(
-            f"SELECT 客户城市, 客户区县, "
-            f"COUNT(*) authorized, "
-            f"SUM(CASE WHEN {TIER_RANK} >= 1 THEN 1 ELSE 0 END) activated_v1, "
-            f"SUM(CASE WHEN {TIER_RANK} >= 2 THEN 1 ELSE 0 END) activated, "
-            f"SUM(CASE WHEN {TIER_RANK} >= 3 THEN 1 ELSE 0 END) senior "
-            f"FROM provider_contract WHERE {NOT_PLAQUE} "
-            f"GROUP BY 客户城市, 客户区县"
+        events = so_events(_so_year(end, start))
+        contract_rows = conn.execute(
+            f"""SELECT 客户城市, 客户区县, 客户编码 AS code,
+                       date(签约日期) AS signed, date(激活时间) AS act,
+                       {TIER_RANK} AS rank
+                FROM provider_contract WHERE {NOT_PLAQUE}"""
         ).fetchall()
-        period_rows = conn.execute(
-            f"SELECT 客户城市, 客户区县, "
-            f"SUM(CASE WHEN date(签约日期) BETWEEN ? AND ? THEN 1 ELSE 0 END) authorized, "
-            f"SUM(CASE WHEN {TIER_RANK} >= 1 AND date(激活时间) BETWEEN ? AND ? "
-            f"    THEN 1 ELSE 0 END) activated_v1, "
-            f"SUM(CASE WHEN {TIER_RANK} >= 2 AND date(激活时间) BETWEEN ? AND ? "
-            f"    THEN 1 ELSE 0 END) activated, "
-            f"SUM(CASE WHEN {TIER_RANK} >= 3 AND date(激活时间) BETWEEN ? AND ? "
-            f"    THEN 1 ELSE 0 END) senior "
-            f"FROM provider_contract WHERE {NOT_PLAQUE} "
-            f"GROUP BY 客户城市, 客户区县",
-            (start, end, start, end, start, end, start, end)
-        ).fetchall()
+        ytd_by: Dict[Tuple[str, str], Dict[str, int]] = {}
+        period_by: Dict[Tuple[str, str], Dict[str, int]] = {}
+        for r in contract_rows:
+            city, dist = r["客户城市"], r["客户区县"] or ""
+            key = (city, dist)
+            yslot = ytd_by.setdefault(key, _empty_counts())
+            pslot = period_by.setdefault(key, _empty_counts())
+            signed, act, rank = r["signed"], r["act"], r["rank"]
+            ev = events.get(r["code"] or "") or {}
+            first_so, v3_time = ev.get("first_so"), ev.get("v3_time")
+            if signed is not None and signed <= end:
+                yslot["authorized"] += 1
+                if rank is not None:
+                    if rank >= 1 and first_so is not None and first_so <= end:
+                        yslot["activated_v1"] += 1
+                    if rank >= 2 and act is not None and act <= end:
+                        yslot["activated"] += 1
+                    if (rank >= 3 and act is not None and act <= end
+                            and v3_time is not None and v3_time <= end):
+                        yslot["senior"] += 1
+            if signed is not None and start <= signed <= end:
+                pslot["authorized"] += 1
+            if rank is not None:
+                if rank >= 1 and first_so is not None and start <= first_so <= end:
+                    pslot["activated_v1"] += 1
+                if rank >= 2 and act is not None and start <= act <= end:
+                    pslot["activated"] += 1
+                if rank >= 3 and v3_time is not None and start <= v3_time <= end:
+                    pslot["senior"] += 1
+        ytd_rows = [
+            {"客户城市": c, "客户区县": d, **vals} for (c, d), vals in ytd_by.items()
+        ]
+        period_rows = [
+            {"客户城市": c, "客户区县": d, **vals} for (c, d), vals in period_by.items()
+        ]
         tgt_rows = conn.execute(
             "SELECT * FROM provider_target WHERE 年度 = ?", (year,)
         ).fetchall()
@@ -335,7 +356,7 @@ def build_overview(user: Optional[User], period_key: str, level: str,
     meta = period_meta(period_key)
     tree = scoped_geo_tree(user, geo_tree())
     notes = [
-        f"转化率取 YTD 存量口径（与漏斗箭头一致），短板阈值 {int(WEAK_RATE)}%。",
+        f"转化率取所选周期期末存量（与漏斗箭头一致），短板阈值 {int(WEAK_RATE)}%。",
         "目标缺口：全年授权实际 < 90% 生效目标（手填 ?? 下发）。区县无下发目标，"
         "没手填过的不计入缺口。",
         "关键因素热力图本版不做，短板只看四跳转化率。",

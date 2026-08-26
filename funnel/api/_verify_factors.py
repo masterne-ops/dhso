@@ -267,7 +267,8 @@ def main():
     print("\n── compute_all / 未注册因子 ──")
     allv = f.compute_all(None, None, *JUL)
     ck("含全部已注册因子", sorted(allv.keys()),
-       ["a2t_fo", "a2t_meet", "a2t_visit", "a2t_visit_dahua", "a2t_visit_dealer",
+       ["a2t_churn_recover", "a2t_churn_visit", "a2t_churn_visit_recover",
+        "a2t_fo", "a2t_meet", "a2t_visit", "a2t_visit_dahua", "a2t_visit_dealer",
         "a2v1_new_open"])
     ck("未注册因子返回 None", f.compute("a2t_pa", None, None, *JUL), None)
 

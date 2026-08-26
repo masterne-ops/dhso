@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>业务员能力评估</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#1a1a1a;--muted:#666;--line:#e2e5ea;--weak:#c0392b;--ok:#1e8449;--accent:#2563eb}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text)}
+.bar{position:sticky;top:0;z-index:10;background:#fff;border-bottom:1px solid var(--line);padding:10px 16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.bar button,.bar select,.bar input{padding:7px 12px;font-size:13px;border:1px solid var(--line);border-radius:6px;background:#fff;font-family:inherit}
+.bar button.primary{background:var(--accent);color:#fff;border-color:var(--accent);cursor:pointer}
+.bar .sp{flex:1}
+.bar label{font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{border:0;border-right:1px solid var(--line);background:#fff;padding:7px 12px;cursor:pointer}
+.seg button:last-child{border-right:0}
+.seg button.on{background:var(--accent);color:#fff}
+#app{max-width:1200px;margin:0 auto;padding:16px 16px 48px}
+.hero{background:#1e293b;color:#fff;padding:18px 22px;border-radius:8px;margin-bottom:14px}
+.hero h1{margin:0 0 4px;font-size:18px}
+.hero p{margin:0;opacity:.85;font-size:13px}
+.card{background:var(--card);border-radius:8px;padding:14px 16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.kpis{display:flex;flex-wrap:wrap;gap:10px}
+.kpi{background:#f1f5f9;border-radius:8px;padding:10px 14px;min-width:110px}
+.kpi b{display:block;font-size:20px}
+.kpi span{font-size:12px;color:var(--muted)}
+h2{margin:0 0 10px;font-size:15px}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:8px}
+th,td{border:1px solid var(--line);padding:6px 8px;text-align:center}
+th{background:#f8fafc;font-weight:600}
+.l{text-align:left!important}
+.weak{color:var(--weak);font-weight:600}
+.muted{color:var(--muted);font-size:12px}
+.rank tr{cursor:pointer}
+.rank tr:hover,.rank tr.on{background:#eff6ff}
+.opinion{min-height:72px;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:#fffbeb;white-space:pre-wrap;outline:none}
+.opinion:empty:before{content:attr(data-ph);color:#aaa}
+.opinion:focus{border-color:var(--accent)}
+.err{color:var(--weak);padding:24px;text-align:center}
+.badge{display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px}
+.badge.y{background:#dcfce7;color:#166534}
+.badge.n{background:#fee2e2;color:#991b1b}
+.badge.p{background:#fef3c7;color:#92400e}
+.badge.s{background:#e2e8f0;color:#475569}
+.filt{display:inline-flex;align-items:center;gap:6px}
+.filt-lab{font-size:11px;color:var(--muted);white-space:nowrap}
+.hint{max-width:1200px;margin:8px auto 0;padding:0 16px;font-size:12px;color:var(--muted)}
+#subjectSel,#orgSel,#citySel,#personSel{min-width:160px;max-width:280px}
+</style>
+</head>
+<body>
+<div class="bar">
+  <button type="button" onclick="history.back()">← 返回</button>
+  <label>周期 <input id="periodInp" size="10" placeholder="2026-07"/></label>
+  <span class="filt">
+    <span class="filt-lab">① 地市</span>
+    <select id="citySel" onchange="onCityChange()" disabled>
+      <option value="">加载中…</option>
+    </select>
+  </span>
+  <span class="filt">
+    <span class="filt-lab">归属</span>
+    <span class="seg">
+      <button type="button" id="btnSideAll" class="on" onclick="setSide('all')">全部</button>
+      <button type="button" id="btnSideDahua" onclick="setSide('dahua')">大华</button>
+      <button type="button" id="btnSideDealer" onclick="setSide('dealer')">代理</button>
+    </span>
+  </span>
+  <span class="filt">
+    <span class="filt-lab">② 组织</span>
+    <select id="orgSel" onchange="onOrgChange()" disabled>
+      <option value="">先选地市…</option>
+    </select>
+  </span>
+  <span class="filt">
+    <span class="filt-lab">③ 个人</span>
+    <select id="personSel" onchange="onPersonChange()" disabled>
+      <option value="">先选组织…</option>
+    </select>
+  </span>
+  <button type="button" class="primary" onclick="load({keepOrg:true,keepPerson:true})">查询</button>
+  <span class="sp"></span>
+  <span id="status" class="muted">加载中…</span>
+</div>
+<p class="hint" id="filterHint">①地市+归属 → ②组织（全部 / 全部代理商 / 大华 / 各代理公司）→ ③默认整组织，可选个人。</p>
+<div id="app"></div>
+<script>
+const qs = new URLSearchParams(location.search);
+let GEO = qs.get('geo_key') || '浙江//';
+let PERIOD = qs.get('period_key') || '';
+let SIDE = qs.get('side') || 'all';
+let ORG = qs.get('org') || '';
+let PERSON = qs.get('person') || qs.get('subject') || '';
+let _loadSeq = 0;
+let _loading = false;
+let _cities = [];
+let _lastEval = null;
+
+document.getElementById('periodInp').value = PERIOD;
+if (!ORG) {
+  if (SIDE === 'dahua') ORG = 'dahua';
+  else if (SIDE === 'dealer') ORG = 'all_dealers';
+  else ORG = 'all';
+}
+if (PERSON.startsWith('dahua:')) {
+  ORG = ORG || 'dahua';
+  PERSON = PERSON.slice(6);
+}
+syncFilterBtns();
+
+function syncFilterBtns(){
+  document.getElementById('btnSideAll').classList.toggle('on', SIDE === 'all');
+  document.getElementById('btnSideDahua').classList.toggle('on', SIDE === 'dahua');
+  document.getElementById('btnSideDealer').classList.toggle('on', SIDE === 'dealer');
+}
+
+function defaultOrgForSide(s){
+  if (s === 'dahua') return 'dahua';
+  if (s === 'dealer') return 'all_dealers';
+  return 'all';
+}
+
+function setSide(s){
+  if (SIDE === s) return;
+  SIDE = s;
+  ORG = defaultOrgForSide(s);
+  PERSON = '';
+  syncFilterBtns();
+  load({ keepOrg: true, keepPerson: false });
+}
+
+function onCityChange(){
+  const v = document.getElementById('citySel').value;
+  if (!v || v === GEO) return;
+  GEO = v;
+  ORG = defaultOrgForSide(SIDE);
+  PERSON = '';
+  load({ keepOrg: true, keepPerson: false });
+}
+
+function onOrgChange(){
+  const v = document.getElementById('orgSel').value;
+  if (!v || v === ORG) return;
+  ORG = v;
+  PERSON = '';
+  load({ keepOrg: true, keepPerson: false });
+}
+
+function onPersonChange(){
+  const v = document.getElementById('personSel').value;
+  if (v === (PERSON || '')) return;
+  PERSON = v;
+  load({ keepOrg: true, keepPerson: true });
+}
+
+function pickPerson(key){
+  if (key == null) return;
+  if (key === (PERSON || '')) return;
+  PERSON = key;
+  load({ keepOrg: true, keepPerson: true });
+}
+
+function sideLabel(s){ return s === 'dahua' ? '大华' : '代理'; }
+function sideBadge(s){
+  return s === 'dahua'
+    ? '<span class="badge s">大华</span>'
+    : '<span class="badge y">代理</span>';
+}
+
+function esc(s){
+  const d = document.createElement('div');
+  d.textContent = s == null ? '' : String(s);
+  return d.innerHTML;
+}
+function escAttr(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/"/g,'&quot;')
+    .replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function pct(v){ return v == null ? '—' : Number(v).toFixed(1) + '%'; }
+function num(v){ return v == null ? '—' : Number(v).toLocaleString(); }
+function evalBody(){
+  return { side: SIDE, org: ORG || null, person: PERSON || null };
+}
+
+function bindOpinion(el){
+  const saved = (_lastEval && _lastEval.saved && _lastEval.saved.note) || '';
+  if (saved) el.textContent = saved;
+  let t = null;
+  el.addEventListener('input', () => {
+    clearTimeout(t);
+    t = setTimeout(() => saveEvalPatch({ note: el.textContent }), 800);
+  });
+}
+
+function fillCities(d){
+  const sel = document.getElementById('citySel');
+  _cities = d.cities || [];
+  GEO = d.geo_key || GEO;
+  if (!_cities.length) {
+    sel.innerHTML = `<option value="${escAttr(GEO)}">${esc(GEO)}</option>`;
+    sel.disabled = false;
+    return;
+  }
+  sel.innerHTML = _cities.map(c =>
+    `<option value="${escAttr(c.key)}"${c.key === GEO ? ' selected' : ''}>${esc(c.name)}</option>`
+  ).join('');
+  sel.disabled = false;
+  sel.value = GEO;
+}
+
+function fillOrgs(d){
+  const sel = document.getElementById('orgSel');
+  const list = d.orgs || [];
+  ORG = d.org || '';
+  if (!list.length) {
+    sel.innerHTML = '<option value="">（当前地市无组织）</option>';
+    sel.disabled = true;
+    return;
+  }
+  sel.innerHTML = list.map(o =>
+    `<option value="${escAttr(o.key)}"${o.key === ORG ? ' selected' : ''}>${esc(o.name)}（${o.people}人 · ${o.visits}次）</option>`
+  ).join('');
+  sel.disabled = false;
+  sel.value = ORG;
+}
+
+function fillPeople(d){
+  const sel = document.getElementById('personSel');
+  const list = d.people || d.subjects || [];
+  PERSON = d.person || '';
+  const rollup = (d.org === 'all' || d.org === 'all_dealers');
+  const allLab = rollup
+    ? (d.org === 'all_dealers'
+      ? `全部（所有代理业务员 · ${list.length}人）`
+      : `全部（${list.length}人）`)
+    : `全部（整组织 · ${list.length}人）`;
+  if (!list.length) {
+    sel.innerHTML = `<option value="">${esc(allLab)}</option>`;
+    sel.disabled = false;
+    sel.value = '';
+    return;
+  }
+  const opts = [`<option value=""${!PERSON ? ' selected' : ''}>${esc(allLab)}</option>`];
+  list.forEach(p => {
+    const co = (rollup && p.company && p.side === 'dealer') ? ` · ${p.company}` : '';
+    opts.push(`<option value="${escAttr(p.key)}"${p.key === PERSON ? ' selected' : ''}>${esc(p.name)}${esc(co)}（${p.visits}次）</option>`);
+  });
+  sel.innerHTML = opts.join('');
+  sel.disabled = false;
+  sel.value = PERSON || '';
+}
+
+function statusBadge(it){
+  if (it.status === 'pending') return '<span class="badge p">无数据</span>';
+  if (it.status === 'skip') return '<span class="badge s" title="本周期没有可检查的客户样本">无样本</span>';
+  if (it.status === 'metric') return '<span class="badge s">监测</span>';
+  return it.pass ? '<span class="badge y">达标</span>' : '<span class="badge n">未达标</span>';
+}
+
+function sopSourceLabel(src){
+  if (src === 'person') return '个人';
+  if (src === 'org') return '组织';
+  if (src === 'group') return '群体';
+  return '默认';
+}
+function sopPresetCell(it){
+  const unit = it.preset_unit || '';
+  const val = it.preset_value == null ? '' : it.preset_value;
+  const src = sopSourceLabel(it.preset_source);
+  return `<span style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap">
+    <input type="number" step="any" class="sop-preset-inp"
+      data-sop-id="${escAttr(it.id)}"
+      value="${escAttr(val)}"
+      style="width:72px;padding:4px 6px;border:1px solid var(--line);border-radius:4px;font:inherit"
+      onchange="saveSopPreset(this)" onclick="event.stopPropagation()"/>
+    <span class="muted">${esc(unit)}</span>
+    <span class="badge s" title="阈值来源">${esc(src)}</span>
+  </span>`;
+}
+async function saveSopPreset(el){
+  const id = el.getAttribute('data-sop-id');
+  if (!id) return;
+  const raw = el.value;
+  const value = (raw === '' ? null : Number(raw));
+  if (value != null && Number.isNaN(value)) return;
+  await saveEvalPatch({ item_id: id, preset_value: value }, { reload: true });
+}
+
+async function saveEvalPatch(extra, opts){
+  opts = opts || {};
+  if (!PERIOD || !GEO) return;
+  let url = `/api/funnel/sales-eval?geo_key=${encodeURIComponent(GEO)}&period_key=${encodeURIComponent(PERIOD)}`;
+  try {
+    const r = await fetch(url, {
+      method: 'PUT',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign(evalBody(), extra)),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+    if (opts.reload && data.detail) render(data);
+  } catch (e) {
+    document.getElementById('status').textContent = '保存失败：' + (e.message || e);
+  }
+}
+
+function render(d){
+  _lastEval = d;
+  if (d.side) SIDE = d.side;
+  if (d.org != null) ORG = d.org;
+  PERSON = d.person || '';
+  syncFilterBtns();
+  fillCities(d);
+  fillOrgs(d);
+  fillPeople(d);
+
+  const orgName = d.org_label
+    || ((d.orgs || []).find(o => o.key === ORG) || {}).name
+    || (ORG === 'dahua' ? '大华' : ORG)
+    || '—';
+  const peopleList = d.people || d.subjects || [];
+
+  if (!(d.orgs || []).length) {
+    document.getElementById('app').innerHTML = `
+      <div class="card">
+        <h2>当前筛选下无组织</h2>
+        <p class="muted" style="margin:0">请换地市或归属。本周期本地区没有符合条件的跑动记录。</p>
+      </div>`;
+    document.getElementById('status').textContent = '当前筛选下无组织';
+    return;
+  }
+
+  const k = (d.detail && d.detail.kpis) || {};
+  const matrix = (d.detail && d.detail.matrix) || [];
+  const sop = (d.detail && d.detail.sop) || { items: [], rate: null };
+  const notes = (d.notes || []).map(n => `<li>${esc(n)}</li>`).join('');
+
+  const matrixRows = matrix.map(r => `<tr>
+    <td class="l">${esc(r.label_name)}</td>
+    <td>${esc(r.utility)}</td>
+    <td>${r.necessary ? '<span class="badge y">Y</span>' : '<span class="badge n">N</span>'}</td>
+    <td class="l muted">${esc(r.benefit_desc)}</td>
+    <td>${r.visits}</td>
+    <td>${r.benefit_value == null ? '—' : num(r.benefit_value)}${r.benefit_unit ? (' ' + esc(r.benefit_unit)) : ''}</td>
+    <td>${r.roi_text != null ? esc(r.roi_text) : (r.roi == null ? '—' : r.roi)}</td>
+    <td>${r.cloud_active == null ? '—' : r.cloud_active}</td>
+  </tr>`).join('');
+
+  const sopRows = (sop.items || []).map(it => `<tr>
+    <td>${esc(it.tier)}</td>
+    <td class="l">${esc(it.name)}</td>
+    <td class="l muted">${esc(it.rule)}</td>
+    <td>
+      <div>${statusBadge(it)}</div>
+      <div class="muted" style="font-size:11px;margin-top:2px">${esc(it.detail || '')}</div>
+    </td>
+    <td class="l">${sopPresetCell(it)}</td>
+  </tr>`).join('');
+
+  const rankRows = (d.ranking || []).map(r => {
+    const safe = String(r.key).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return `<tr class="${r.key === PERSON ? 'on' : ''}" onclick="pickPerson('${safe}')">
+      <td>${sideBadge(r.side)}</td>
+      <td class="l">${esc(r.name)}</td>
+      <td>${r.visits}</td>
+      <td>${r.customers}</td>
+      <td class="${r.necessary_rate != null && r.necessary_rate < 50 ? 'weak' : ''}">${pct(r.necessary_rate)}</td>
+      <td>${pct(r.unlabeled_rate)}</td>
+      <td>${r.sign_linked || 0}</td>
+      <td>${r.so_providers || 0}</td>
+      <td>${num(r.so_amount)}</td>
+    </tr>`;
+  }).join('');
+
+  const specials = (d.detail && d.detail.specials) || [];
+  const specialRows = specials.map(s => {
+    const act = s.actual;
+    const actTxt = act == null ? '—'
+      : (Number.isInteger(act) ? Number(act).toLocaleString() : Number(act).toLocaleString());
+    const unit = s.unit ? ` ${esc(s.unit)}` : '';
+    return `<tr>
+      <td class="l">${esc(s.name)}</td>
+      <td><span class="badge s">${esc(s.source_label || '专项')}</span></td>
+      <td>${actTxt}${unit}</td>
+      <td class="l muted">${esc(s.note || '')}</td>
+    </tr>`;
+  }).join('');
+  const specialCard = specials.length ? `
+    <div class="card">
+      <h2>专项目标（本对象绝对值）</h2>
+      <p class="muted" style="margin-top:0">取自漏斗本地区本周期已设置的专项；不按人设目标，仍展示本对象可归因的绝对值。</p>
+      <table>
+        <thead><tr><th class="l">指标</th><th>来源</th><th>绝对值</th><th class="l">说明</th></tr></thead>
+        <tbody>${specialRows}</tbody>
+      </table>
+    </div>` : (d.special_pins && d.special_pins.length === 0 ? `
+    <div class="card">
+      <h2>专项目标</h2>
+      <p class="muted" style="margin:0">本地区本周期尚未在漏斗设置专项目标。</p>
+    </div>` : '');
+
+  const sideTitle = d.side === 'dahua' ? '大华' : (d.side === 'dealer' ? '代理' : '全部');
+  // 标题：汇总态只显示组织名（如「全部」「全部代理商」「大华」）；选人后再加人名
+  const heroTitle = PERSON
+    ? `业务员能力评估 · ${orgName} · ${PERSON}`
+    : `业务员能力评估 · ${orgName}`;
+  const members = (d.detail && d.detail.people && d.detail.people.length)
+    ? `<p class="muted">组织成员：${d.detail.people.map(esc).join('、')}</p>`
+    : '';
+
+  document.getElementById('app').innerHTML = `
+    <header class="hero">
+      <h1>${esc(heroTitle)}</h1>
+      <p>${esc(d.geo_key)} · ${esc(sideTitle)} · ${esc(d.period_key)}（${esc(d.start)} ~ ${esc(d.end)}）· 生成 ${esc(d.generated)}</p>
+    </header>
+
+    <div class="card">
+      <h2>双主 KPI</h2>
+      <div class="kpis">
+        <div class="kpi"><b>${pct(k.necessary_rate)}</b><span>必要性跑动占比</span></div>
+        <div class="kpi"><b>${pct(k.sop_rate)}</b><span>规定动作合规率</span></div>
+        <div class="kpi"><b>${pct(k.unlabeled_rate)}</b><span>未标注率</span></div>
+        <div class="kpi"><b>${num(k.visits)}</b><span>跑动次数</span></div>
+        <div class="kpi"><b>${num(k.customers)}</b><span>覆盖客户</span></div>
+        <div class="kpi"><b>${num(k.so_amount)}</b><span>关联 SO 货值</span></div>
+        <div class="kpi"><b>${num(k.sign_count)}</b><span>当日关联新签</span></div>
+      </div>
+      ${members}
+      <p class="muted">有标签 ${k.labeled || 0} / 未标注 ${k.unlabeled || 0}；真异常打卡 ${pct(k.true_anomaly_rate)}；
+        合规 ${k.sop_ok || 0}/${k.sop_auto || 0} 可自动项，待录入 ${k.sop_pending || 0}。</p>
+    </div>
+
+    ${specialCard}
+
+    <div class="card">
+      <h2>跑动目的矩阵（口径 + 本周期实测）</h2>
+      <table>
+        <thead><tr>
+          <th class="l">跑动标签</th><th>效用</th><th>必要</th><th class="l">可量化收益</th>
+          <th>跑动次数</th><th>收益</th><th>ROI</th><th>云联活跃</th>
+        </tr></thead>
+        <tbody>${matrixRows || '<tr><td colspan="8">无数据</td></tr>'}</tbody>
+      </table>
+      <p class="muted">建联=意向服务商打卡；铺货=跑动当日有铺货；一次拜访可计入多列。建联 ROI 为「跑动/签约（全省基准）」；铺货 ROI 暂空；云联活跃未接入。</p>
+    </div>
+
+    <div class="card">
+      <h2>分档规定动作</h2>
+      <table>
+        <thead><tr>
+          <th>档位</th><th class="l">规定动作</th><th class="l">规则</th>
+          <th>状态</th><th class="l">规定阈值（写入评估库）</th>
+        </tr></thead>
+        <tbody>${sopRows || '<tr><td colspan="5">无</td></tr>'}</tbody>
+      </table>
+      <p class="muted">${esc(sop.budget_note || '')}</p>
+    </div>
+
+    <div class="card">
+      <h2>本组织个人排行（点击切换）</h2>
+      <table class="rank">
+        <thead><tr>
+          <th>侧</th><th class="l">业务员</th><th>跑动</th><th>客户</th><th>必要性</th><th>未标注</th>
+          <th>关联新签</th><th>SO家数</th><th>SO货值</th>
+        </tr></thead>
+        <tbody>${rankRows || '<tr><td colspan="9">本组织无跑动</td></tr>'}</tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>分析小结（保存在评估库，换设备也能取回）</h2>
+      <div class="opinion" contenteditable="true" id="opinionBox" data-ph="请填写对本对象的评估意见…"></div>
+      <p class="muted" id="savedMeta" style="margin:8px 0 0"></p>
+    </div>
+
+    <div class="card">
+      <h2>口径与数据缺口</h2>
+      <ul class="muted">${notes}</ul>
+    </div>
+  `;
+  bindOpinion(document.getElementById('opinionBox'));
+  const visits = (d.detail && d.detail.kpis && d.detail.kpis.visits) || 0;
+  const scopeLab = PERSON || orgName;
+  const savedAt = d.saved && d.saved.updated_at;
+  const savedEl = document.getElementById('savedMeta');
+  if (savedEl) {
+    savedEl.textContent = savedAt
+      ? `本对象本周期切片已保存 · ${savedAt}`
+      : '进入本页后会写入本对象本周期状态切片';
+  }
+  document.getElementById('status').textContent =
+    `${scopeLab} · ${visits} 次 · ${peopleList.length} 人`;
+}
+
+async function load(opts){
+  opts = opts || {};
+  if (!opts.keepOrg) ORG = defaultOrgForSide(SIDE);
+  if (!opts.keepPerson) PERSON = '';
+
+  PERIOD = document.getElementById('periodInp').value.trim();
+  const cityEl = document.getElementById('citySel');
+  if (cityEl && cityEl.value) GEO = cityEl.value.trim() || GEO;
+
+  if (!PERIOD) {
+    document.getElementById('app').innerHTML = '<p class="err">请填写周期键，如 2026-W34 或 2026-07</p>';
+    document.getElementById('status').textContent = '缺周期';
+    return;
+  }
+
+  const u = new URL(location.href);
+  u.searchParams.set('geo_key', GEO);
+  u.searchParams.set('period_key', PERIOD);
+  u.searchParams.set('side', SIDE);
+  if (ORG) u.searchParams.set('org', ORG); else u.searchParams.delete('org');
+  if (PERSON) u.searchParams.set('person', PERSON); else u.searchParams.delete('person');
+  u.searchParams.delete('mode');
+  u.searchParams.delete('subject');
+  history.replaceState(null, '', u);
+
+  const seq = ++_loadSeq;
+  _loading = true;
+  document.getElementById('orgSel').disabled = true;
+  document.getElementById('personSel').disabled = true;
+  document.getElementById('status').textContent = '加载中…';
+  try {
+    let url = `/api/funnel/sales-eval?geo_key=${encodeURIComponent(GEO)}&period_key=${encodeURIComponent(PERIOD)}&side=${SIDE}`;
+    if (ORG) url += `&org=${encodeURIComponent(ORG)}`;
+    if (PERSON) url += `&person=${encodeURIComponent(PERSON)}`;
+    const r = await fetch(url, { credentials: 'same-origin' });
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+    if (seq !== _loadSeq) return;
+    ORG = data.org || '';
+    PERSON = data.person || data.subject || '';
+    render(data);
+  } catch (e) {
+    if (seq !== _loadSeq) return;
+    document.getElementById('app').innerHTML = `<p class="err">加载失败：${esc(e.message || e)}</p>`;
+    document.getElementById('status').textContent = '失败';
+    document.getElementById('orgSel').disabled = false;
+    document.getElementById('personSel').disabled = false;
+  } finally {
+    if (seq === _loadSeq) _loading = false;
+  }
+}
+
+load({ keepOrg: true, keepPerson: true });
+</script>
+</body>
+</html>

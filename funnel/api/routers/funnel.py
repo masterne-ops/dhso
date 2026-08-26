@@ -24,10 +24,21 @@ from ..prod_db import (
 from ..rollup import rollup as prod_rollup
 from ..auth import current_user
 from ..users import authorize_geo, scoped_geo_tree
-from ..schemas import StatePayload, OverviewItemPatch
+from ..schemas import (
+    StatePayload, OverviewItemPatch, SpecialPinPayload, SpecialTargetPayload,
+    SalesEvalPatch,
+)
 from ..overview import build_overview, patch_item
 from ..week_rollup import build_week_rollup
 from ..factor_library import build_factor_library
+from ..report import build_report_data
+from ..sales_eval import build_sales_eval, patch_sales_eval
+from ..special import (
+    add_pin as special_add_pin,
+    build_special,
+    remove_pin as special_remove_pin,
+    set_target as special_set_target,
+)
 
 router = APIRouter(prefix="/api/funnel", tags=["funnel"])
 
@@ -62,7 +73,7 @@ def get_overview(request: Request,
                  city: Optional[str] = Query(
                      None, description="管理员看区县时可选，只列该市")):
     """
-    管辖总览：一次返回下级单位的 YTD 转化率、短板、待办/问题。
+    管辖总览：一次返回下级单位的期末存量转化率、短板、待办/问题。
 
     不串行打 /data+/state。地市账号只看到本市（scoped_geo_tree），
     传别人的 city= 会 403。
@@ -333,10 +344,11 @@ def get_funnel_data(request: Request,
                     geo_key: str = GeoKey, period_key: str = PeriodKey,
                     cert: str = CertMode):
     """
-    漏斗四阶绝对值，取自生产库。
+    漏斗五阶绝对值，取自生产库。
 
     geo_key 形如 '浙江/杭州市/西湖区'（省级则后两段为空）；
-    period_key 是 '2026-W31' 或 '2026-07'，在这里解析成日期区间算增量；
+    period_key 是 '2026-W31' 或 '2026-07'，在这里解析成日期区间：
+    存量截至期末，增量落在区间内；
     cert 是认证维度筛选 all/cert/nocert，只作用于签约表那三阶，城市总量不变。
     生产库不可用时返回 data=null，前端继续用内置演示数据，页面不至于白屏。
     """
@@ -359,3 +371,122 @@ def get_funnel_data(request: Request,
     return {"geo_key": geo_key, "period_key": period_key,
             "range": {"start": start, "end": end}, "cert": cert,
             "source": "prod", "data": data}
+
+
+@router.get("/report-data")
+def get_report_data(request: Request,
+                    geo_key: str = GeoKey,
+                    period_key: str = PeriodKey):
+    """
+    漏斗报告 JSON：期末存量转化率 + 周期增量 + benchmark + 跑动/SO 佐证。
+    省级 geo_key 出 11 地市明细；地市级出本市；区县级出本区县。
+    """
+    require_geo(request, geo_key)
+    try:
+        return build_report_data(geo_key, period_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+
+@router.get("/sales-eval")
+def get_sales_eval(
+    request: Request,
+    geo_key: str = GeoKey,
+    period_key: str = PeriodKey,
+    side: str = Query("all", pattern="^(all|dahua|dealer)$",
+                      description="第一层：全部 / 只看大华 / 只看代理商"),
+    org: Optional[str] = Query(
+        None, description="第二层：dahua 或代理商公司名；空则取列表第一"),
+    person: Optional[str] = Query(
+        None, description="第三层：业务员姓名；空则取组织内第一人"),
+    # 旧参数兼容
+    mode: str = Query("person", pattern="^(person|dealer)$"),
+    subject: Optional[str] = Query(None),
+):
+    """
+    业务员能力评估（三层筛选）：地市+归属 → 大华/代理商公司 → 个人成效。
+    """
+    require_geo(request, geo_key)
+    try:
+        return build_sales_eval(
+            geo_key, period_key,
+            side=side, org=org, person=person,
+            mode=mode, subject=subject,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+
+@router.put("/sales-eval")
+def put_sales_eval(
+    request: Request,
+    payload: SalesEvalPatch,
+    geo_key: str = GeoKey,
+    period_key: str = PeriodKey,
+):
+    """
+    写入本评估对象的规定动作阈值和/或分析小结。
+    独立表 sales_eval_preset / sales_eval_slice，不挂漏斗切片。
+    """
+    require_geo(request, geo_key)
+    if not payload.item_id and payload.note is None:
+        raise HTTPException(status_code=422, detail="需要 item_id 或 note")
+    try:
+        return patch_sales_eval(
+            geo_key, period_key,
+            side=payload.side, org=payload.org, person=payload.person,
+            item_id=payload.item_id, preset_value=payload.preset_value,
+            note=payload.note,
+            rebuild=bool(payload.item_id),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+
+@router.get("/special-targets")
+def get_special_targets(request: Request,
+                        geo_key: str = GeoKey, period_key: str = PeriodKey):
+    """
+    专项目标：本级可见的因子钉（上级设置自动继承）+ 本期目标/实际/完成率/下级卷积。
+    """
+    require_geo(request, geo_key)
+    try:
+        return build_special(geo_key, period_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/special-targets")
+def post_special_pin(request: Request, payload: SpecialPinPayload,
+                     geo_key: str = GeoKey, period_key: str = PeriodKey):
+    """本级设置专项目标（钉住一个因子）；省设置后全市/区县自动可见。"""
+    require_geo(request, geo_key)
+    try:
+        return special_add_pin(
+            geo_key, period_key, payload.factor_id, payload.target)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.put("/special-targets")
+def put_special_target(request: Request, payload: SpecialTargetPayload,
+                       geo_key: str = GeoKey, period_key: str = PeriodKey):
+    """本级填写/清空某专项的本期目标。"""
+    require_geo(request, geo_key)
+    try:
+        return special_set_target(
+            geo_key, period_key, payload.factor_id, payload.target)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.delete("/special-targets")
+def delete_special_pin(request: Request,
+                       geo_key: str = GeoKey, period_key: str = PeriodKey,
+                       factor_id: str = Query(..., description="因子 id")):
+    """取消本级设置的专项（不能取消上级设置的）。"""
+    require_geo(request, geo_key)
+    try:
+        return special_remove_pin(geo_key, period_key, factor_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))

@@ -61,7 +61,143 @@ def init_schema():
             computed_at TEXT DEFAULT (datetime('now','localtime')),
             UNIQUE (factor_id, geo_key, period_key)
         );
+
+        -- ── 当年筛后 SO 事件（首台 / 过 1 万日），避免每次切周期扫 install_redpack ──
+        CREATE TABLE IF NOT EXISTS so_event_cache (
+            year     TEXT NOT NULL,
+            stamp    TEXT NOT NULL,
+            code     TEXT NOT NULL,
+            first_so TEXT,
+            v3_time  TEXT,
+            PRIMARY KEY (year, stamp, code)
+        );
+        CREATE TABLE IF NOT EXISTS so_event_meta (
+            year     TEXT PRIMARY KEY,
+            stamp    TEXT NOT NULL,
+            n        INTEGER,
+            built_at TEXT DEFAULT (datetime('now','localtime'))
+        );
+
+        -- 拜访目的原文 → 图上 6 类标准跑动标签（业务员能力评估用）
+        CREATE TABLE IF NOT EXISTS visit_purpose_map (
+            token       TEXT PRIMARY KEY,  -- 库内标签，如「新签」
+            label_id    TEXT NOT NULL,     -- connect/policy/product_talk/...
+            label_name  TEXT NOT NULL,     -- 建联拓客 / …
+            necessary   INT  NOT NULL,     -- 1=必要 Y，0=非必要 N
+            sort_order  INT  DEFAULT 0
+        );
+
+        -- 专项目标：某周期在某级「设置」的因子钉（省设 → 全市/区县自动可见）
+        CREATE TABLE IF NOT EXISTS special_pin (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            period_key     TEXT NOT NULL,
+            factor_id      TEXT NOT NULL,
+            owner_geo_key  TEXT NOT NULL,
+            created_at     TEXT DEFAULT (datetime('now','localtime')),
+            UNIQUE (period_key, factor_id, owner_geo_key)
+        );
+
+        -- 专项目标本期数值（按地区）；与关键因素 factor_targets 同步写入
+        CREATE TABLE IF NOT EXISTS special_target (
+            period_key  TEXT NOT NULL,
+            factor_id   TEXT NOT NULL,
+            geo_key     TEXT NOT NULL,
+            target      REAL,
+            updated_at  TEXT DEFAULT (datetime('now','localtime')),
+            PRIMARY KEY (period_key, factor_id, geo_key)
+        );
+
+        -- ── 业务员评估（独立于漏斗切片，不关联 funnel_state）────────────────
+        -- 规定动作手调阈值：群体 / 组织 / 个人各存各的
+        CREATE TABLE IF NOT EXISTS sales_eval_preset (
+            geo_key      TEXT NOT NULL,
+            period_key   TEXT NOT NULL,
+            side         TEXT NOT NULL,  -- all | dahua | dealer
+            org          TEXT NOT NULL,  -- all | all_dealers | dahua | 公司名
+            person       TEXT NOT NULL,  -- '' = 整组织/群体
+            item_id      TEXT NOT NULL,  -- prospect_screen / v0_dense / …
+            preset_value REAL,
+            updated_at   TEXT DEFAULT (datetime('now','localtime')),
+            PRIMARY KEY (geo_key, period_key, side, org, person, item_id)
+        );
+        -- 某对象某周期的评估切片（KPI / 规定动作状态 / 小结）
+        CREATE TABLE IF NOT EXISTS sales_eval_slice (
+            geo_key     TEXT NOT NULL,
+            period_key  TEXT NOT NULL,
+            side        TEXT NOT NULL,
+            org         TEXT NOT NULL,
+            person      TEXT NOT NULL,
+            slice_json  TEXT NOT NULL,
+            note        TEXT DEFAULT '',
+            created_at  TEXT DEFAULT (datetime('now','localtime')),
+            updated_at  TEXT DEFAULT (datetime('now','localtime')),
+            PRIMARY KEY (geo_key, period_key, side, org, person)
+        );
         """)
+    seed_visit_purpose_map()
+
+
+# 图上 6 类标准标签（与渠道生意关注指标表对齐）
+PURPOSE_LABELS = [
+    {"id": "connect", "name": "建联拓客", "necessary": 1, "order": 1,
+     "utility": "高", "benefit": "意向跑动归因签约（本周期）",
+     "roi_hint": "意向跑动次数/意向归因签约数（括号内全省基准）",
+     "alt": "无"},
+    {"id": "distribute", "name": "铺货", "necessary": 1, "order": 2,
+     "utility": "高", "benefit": "铺货（跑动当日）", "roi_hint": "暂空",
+     "alt": "无"},
+    {"id": "policy", "name": "合作政策讲解", "necessary": 0, "order": 3,
+     "utility": "低", "benefit": "SO（当日、7日）", "roi_hint": "SO/跑动次数",
+     "alt": "不要单独为讲政策上门"},
+    {"id": "product_talk", "name": "销售产品讲解", "necessary": 0, "order": 4,
+     "utility": "低", "benefit": "SO（当日、7日）", "roi_hint": "SO/跑动次数",
+     "alt": "微信、推广会"},
+    {"id": "product_exp", "name": "销售产品体验", "necessary": 1, "order": 5,
+     "utility": "中", "benefit": "SO（当日、7日）", "roi_hint": "SO/跑动；云联活跃/跑动",
+     "alt": "推广会、新品试用"},
+    {"id": "maintain", "name": "日常维护", "necessary": 1, "order": 6,
+     "utility": "中", "benefit": "SO（当日、7日）", "roi_hint": "SO/跑动次数",
+     "alt": "电话降低线下频次"},
+]
+
+# 生产库 拜访目的 现值为多选：新签/行销/激活/复购
+PURPOSE_SEED = [
+    ("新签", "connect"),
+    ("行销", "product_talk"),
+    ("激活", "product_exp"),
+    ("复购", "maintain"),
+]
+
+
+def seed_visit_purpose_map():
+    """幂等写入种子映射；已有 token 不覆盖（允许运营改表）。"""
+    by_id = {x["id"]: x for x in PURPOSE_LABELS}
+    with get_conn() as conn:
+        for token, lid in PURPOSE_SEED:
+            meta = by_id[lid]
+            conn.execute(
+                """INSERT INTO visit_purpose_map(token, label_id, label_name, necessary, sort_order)
+                   VALUES(?,?,?,?,?)
+                   ON CONFLICT(token) DO NOTHING""",
+                (token, lid, meta["name"], meta["necessary"], meta["order"]),
+            )
+
+
+def load_visit_purpose_map() -> Dict[str, Dict[str, Any]]:
+    """{token: {label_id, label_name, necessary}}"""
+    init_schema()
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT token, label_id, label_name, necessary FROM visit_purpose_map"
+        ).fetchall()
+    return {
+        r["token"]: {
+            "label_id": r["label_id"],
+            "label_name": r["label_name"],
+            "necessary": bool(r["necessary"]),
+        }
+        for r in rows
+    }
 
 
 # ── State helpers ──────────────────────────────────────────────────────────────
@@ -290,4 +426,38 @@ def upsert_factor_cache(geo_key: str, period_key: str, factor_id: str, value: fl
                DO UPDATE SET value=excluded.value,
                              computed_at=datetime('now','localtime')""",
             (factor_id, geo_key, period_key, value)
+        )
+
+
+# ── SO 事件缓存（首台 / 过 1 万日）────────────────────────────────────────────
+def load_so_event_cache(year: str, stamp: str) -> Optional[Dict[str, Dict[str, Optional[str]]]]:
+    """命中则 {code: {first_so, v3_time}}，stamp 对不上返回 None。"""
+    with get_conn() as conn:
+        meta = conn.execute(
+            "SELECT stamp FROM so_event_meta WHERE year=?", (year,)
+        ).fetchone()
+        if not meta or meta["stamp"] != stamp:
+            return None
+        rows = conn.execute(
+            "SELECT code, first_so, v3_time FROM so_event_cache WHERE year=? AND stamp=?",
+            (year, stamp),
+        ).fetchall()
+    return {r["code"]: {"first_so": r["first_so"], "v3_time": r["v3_time"]} for r in rows}
+
+
+def save_so_event_cache(year: str, stamp: str, events: Dict[str, Dict[str, Optional[str]]]):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM so_event_cache WHERE year=?", (year,))
+        conn.execute(
+            """INSERT INTO so_event_meta(year, stamp, n, built_at)
+               VALUES(?,?,?,datetime('now','localtime'))
+               ON CONFLICT(year) DO UPDATE SET
+                 stamp=excluded.stamp, n=excluded.n,
+                 built_at=excluded.built_at""",
+            (year, stamp, len(events)),
+        )
+        conn.executemany(
+            "INSERT INTO so_event_cache(year, stamp, code, first_so, v3_time) VALUES(?,?,?,?,?)",
+            [(year, stamp, code, ev.get("first_so"), ev.get("v3_time"))
+             for code, ev in events.items()],
         )

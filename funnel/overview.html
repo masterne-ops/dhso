@@ -169,7 +169,7 @@ tr.scope td:first-child{font-weight:700}
     <div class="card">
       <div class="cHdr">
         <span class="cTitle">单位 × 漏斗转化率</span>
-        <span class="cSub" id="matrixSub">YTD 存量口径 · 点单位名打开漏斗工作页</span>
+        <span class="cSub" id="matrixSub">期末存量口径 · 点单位名打开漏斗工作页</span>
       </div>
       <div class="toolbar" id="toolbar"></div>
       <div class="tblWrap" id="matrix"></div>
@@ -526,7 +526,7 @@ function renderMatrix(){
     </table>`;
   document.getElementById('matrixSub').textContent = (S.level==='city' && !meCity())
     ? '点地市名进入该市区县总览 · 点「漏斗」打开工作页 · 红格 <70%'
-    : 'YTD 存量口径 · 红格 <70% · 点单位名打开漏斗工作页';
+    : '期末存量口径 · 红格 <70% · 点单位名打开漏斗工作页';
 }
 
 function unitTitle(u){

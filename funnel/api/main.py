@@ -19,6 +19,8 @@ from .routers.funnel import router as funnel_router
 STATIC_DIR = Path(__file__).parent.parent
 PAGE = STATIC_DIR / "funnel_v2.html"
 OVERVIEW_PAGE = STATIC_DIR / "overview.html"
+REPORT_PAGE = STATIC_DIR / "report.html"
+SALES_EVAL_PAGE = STATIC_DIR / "sales_eval.html"
 
 # Ensure the schema exists as soon as the module is imported, so the app works
 # no matter how it is started (uvicorn, TestClient, or an embedded import).
@@ -209,6 +211,20 @@ def index():
 def overview_page():
     """管辖总览。no-store 与漏斗页同一套，避免浏览器吃到旧壳。"""
     return FileResponse(OVERVIEW_PAGE, media_type="text/html",
+                        headers={"Cache-Control": "no-store"})
+
+
+@app.get("/report", include_in_schema=False)
+def report_page():
+    """漏斗报告页：由前端拉 /api/funnel/report-data 渲染，支持导出 PDF。"""
+    return FileResponse(REPORT_PAGE, media_type="text/html",
+                        headers={"Cache-Control": "no-store"})
+
+
+@app.get("/sales-eval", include_in_schema=False)
+def sales_eval_page():
+    """业务员/代理商能力评估页。"""
+    return FileResponse(SALES_EVAL_PAGE, media_type="text/html",
                         headers={"Cache-Control": "no-store"})
 
 
