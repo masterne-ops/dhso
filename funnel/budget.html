@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>数据汇总 / 预算 · 服务商转化漏斗</title>
+<style>
+:root {
+  --blue:#1677ff;--blue-l:#e6f4ff;--blue-d:#0958d9;
+  --green:#52c41a;--green-l:#f6ffed;
+  --red:#ff4d4f;--red-l:#fff2f0;
+  --gray:#8c8c8c;--gray-l:#f5f5f5;--border:#e8e8e8;
+  --text:#141414;--text-s:#595959;--radius:8px;
+  --shadow:0 2px 8px rgba(0,0,0,.08);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+     background:#f0f2f5;color:var(--text);font-size:14px}
+.hdr{background:#fff;position:sticky;top:0;z-index:100;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.hdrTop{display:flex;align-items:center;gap:12px;padding:0 24px;height:46px}
+.hdr h1{font-size:15px;font-weight:600;white-space:nowrap}
+.hdr .sp{flex:1}
+.navLink{font-size:12px;color:var(--blue);text-decoration:none;padding:3px 10px;
+         border:1px solid var(--border);border-radius:4px;white-space:nowrap;background:#fff;cursor:pointer;font-family:inherit}
+.navLink:hover{background:var(--blue-l);border-color:#91caff}
+.navLink.on{background:var(--blue-l);border-color:#91caff;color:var(--blue-d);font-weight:600}
+.saveStatus{font-size:12px;padding:3px 10px;border-radius:4px;white-space:nowrap}
+.saveStatus.saved{color:var(--green);background:var(--green-l)}
+.saveStatus.saving{color:var(--blue);background:var(--blue-l)}
+.saveStatus.error{color:var(--red);background:var(--red-l)}
+.logoutBtn{border:1px solid var(--border);background:#fff;color:var(--text-s);
+           font-size:12px;padding:3px 10px;border-radius:4px;cursor:pointer;display:none}
+.logoutBtn:hover{border-color:var(--red);color:var(--red)}
+.main{max-width:1600px;margin:16px auto;padding:0 24px 40px;display:flex;flex-direction:column;gap:12px}
+.card{background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow)}
+.cHdr{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.cTitle{font-weight:600;font-size:14px}
+.cSub{font-size:12px;color:var(--text-s);flex:1}
+.notes{padding:10px 16px;font-size:12px;color:var(--text-s);line-height:1.6;background:#fafafa;border-bottom:1px solid var(--border)}
+.tblWrap{overflow:auto;max-height:calc(100vh - 160px)}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{position:sticky;top:0;z-index:2;background:#fafafa;text-align:right;padding:7px 8px;
+   font-weight:600;color:var(--text-s);border-bottom:1px solid var(--border);white-space:nowrap}
+th.geo{text-align:left;left:0;z-index:3;min-width:120px}
+td{padding:5px 8px;border-bottom:1px solid #f0f0f0;text-align:right;white-space:nowrap;vertical-align:middle}
+td.geo{text-align:left;position:sticky;left:0;background:#fff;z-index:1;font-weight:600}
+tr.city td.geo{background:#f8fafc}
+tr.district td.geo{font-weight:400;padding-left:22px;color:var(--text-s)}
+tr.district td{background:#fcfcfc}
+tr.foot td{background:#f5f5f5;font-weight:600;border-top:1px solid var(--border)}
+tr.foot td.geo{background:#f5f5f5}
+.tog{border:none;background:none;cursor:pointer;color:var(--gray);font-size:11px;margin-right:4px;padding:0 2px}
+.num{font-variant-numeric:tabular-nums}
+.muted{color:var(--gray)}
+.budInp{width:78px;border:1px dashed var(--border);border-radius:3px;padding:2px 4px;
+        font-size:12px;text-align:right;background:#fffbe6;font-family:inherit}
+.budInp:focus{outline:none;border-color:var(--blue);background:#fff}
+.budInp.dirty{border-color:var(--blue)}
+.budInp.err{border-color:var(--red);background:var(--red-l)}
+.empty{padding:48px 16px;text-align:center;color:var(--gray)}
+.subTotal{color:var(--blue-d);font-weight:600}
+</style>
+</head>
+<body>
+<header class="hdr">
+  <div class="hdrTop">
+    <h1>📊 数据汇总 / 预算</h1>
+    <a href="/" class="navLink" id="funnelLink">漏斗</a>
+    <a href="/overview" class="navLink" id="overviewLink">管辖总览</a>
+    <span class="navLink on">数据汇总</span>
+    <div class="sp"></div>
+    <span id="whoami" class="saveStatus" style="display:none"></span>
+    <button type="button" id="logoutBtn" class="logoutBtn" onclick="doLogout()">登出</button>
+    <span id="saveStatus" class="saveStatus" style="display:none"></span>
+  </div>
+</header>
+<div class="main">
+  <div class="card">
+    <div class="cHdr">
+      <span class="cTitle" id="pageTitle">本期目标 × 预算</span>
+      <span class="cSub" id="pageSub">加载中…</span>
+      <button type="button" class="navLink" onclick="load()">刷新</button>
+    </div>
+    <div class="notes" id="notes"></div>
+    <div class="tblWrap" id="tblWrap"><div class="empty">加载中…</div></div>
+  </div>
+</div>
+<script>
+const LEVELS = [
+  {k:'authorized', l:'授权'},
+  {k:'activated_v1', l:'V1+'},
+  {k:'activated', l:'V2+'},
+  {k:'senior', l:'V3+'},
+];
+let DATA = null;
+let openCities = new Set();
+
+function qs(name){
+  return new URLSearchParams(location.search).get(name) || '';
+}
+function periodKey(){
+  return qs('period') || guessPeriod();
+}
+function guessPeriod(){
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+async function apiGet(path){
+  const r = await fetch('/api/funnel'+path, {credentials:'same-origin'});
+  if(r.status===401){ location.href='/login?next='+encodeURIComponent(location.pathname+location.search); throw new Error('401'); }
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+async function apiPut(path, body){
+  const r = await fetch('/api/funnel'+path, {
+    method:'PUT', credentials:'same-origin',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body),
+  });
+  if(r.status===401){ location.href='/login?next='+encodeURIComponent(location.pathname+location.search); throw new Error('401'); }
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+function setStatus(kind, text){
+  const el = document.getElementById('saveStatus');
+  if(!text){ el.style.display='none'; return; }
+  el.style.display='';
+  el.className = 'saveStatus '+kind;
+  el.textContent = text;
+}
+function fmtN(v){
+  if(v==null || v==='') return '—';
+  const n = Number(v);
+  if(Number.isNaN(n)) return '—';
+  return Math.round(n).toLocaleString();
+}
+function fmtMoney(v){
+  if(v==null || v==='') return '';
+  return Number(v).toLocaleString();
+}
+function rowBudgetSum(row){
+  let s = 0, any=false;
+  LEVELS.forEach(({k})=>{
+    const v = row.budgets?.[k];
+    if(v!=null && v!==''){ s += Number(v); any=true; }
+  });
+  return any ? s : null;
+}
+function cityColTotals(){
+  const t = {}, b = {};
+  LEVELS.forEach(({k})=>{ t[k]=null; b[k]=null; });
+  let bAll = null;
+  (DATA.cities||[]).forEach(city=>{
+    LEVELS.forEach(({k})=>{
+      const tv = city.targets?.[k];
+      if(tv!=null){ t[k] = (t[k]||0) + Number(tv); }
+      const bv = city.budgets?.[k];
+      if(bv!=null && bv!==''){ b[k] = (b[k]||0) + Number(bv); }
+    });
+    const rs = rowBudgetSum(city);
+    if(rs!=null) bAll = (bAll||0) + rs;
+  });
+  return {t, b, bAll};
+}
+function toggleCity(key){
+  if(openCities.has(key)) openCities.delete(key); else openCities.add(key);
+  render();
+}
+function budCell(row, level){
+  const v = row.budgets?.[level];
+  const val = (v==null || v==='') ? '' : v;
+  return `<input class="budInp" type="number" step="1" min="0"
+    data-geo="${esc(row.geo_key)}" data-level="${level}"
+    value="${val}" placeholder="元"
+    onchange="saveBudget(this)" onkeydown="if(event.key==='Enter')this.blur()">`;
+}
+function esc(s){
+  return String(s??'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+}
+function renderRow(row, isCity){
+  const open = openCities.has(row.geo_key);
+  const nDist = (row.districts||[]).length;
+  const tog = isCity && nDist
+    ? `<button type="button" class="tog" onclick="toggleCity('${esc(row.geo_key)}')">${open?'▾':'▸'}</button>`
+    : '';
+  const cls = isCity ? 'city' : 'district';
+  const sum = rowBudgetSum(row);
+  let h = `<tr class="${cls}"><td class="geo">${tog}${esc(row.name)}</td>`;
+  LEVELS.forEach(({k})=>{
+    h += `<td class="num">${fmtN(row.targets?.[k])}</td>`;
+    h += `<td>${budCell(row, k)}</td>`;
+  });
+  h += `<td class="num subTotal">${sum==null?'—':fmtN(sum)}</td></tr>`;
+  if(isCity && open){
+    (row.districts||[]).forEach(d=>{ h += renderRow(d, false); });
+  }
+  return h;
+}
+function render(){
+  if(!DATA){ document.getElementById('tblWrap').innerHTML='<div class="empty">无数据</div>'; return; }
+  document.getElementById('pageTitle').textContent = `本期目标 × 预算 · ${DATA.period_label||DATA.period_key}`;
+  document.getElementById('pageSub').textContent =
+    `${(DATA.cities||[]).length} 个地市 · 列合计按地市行 · 点 ▸ 展开区县`;
+  document.getElementById('notes').innerHTML =
+    (DATA.notes||[]).map(n=>`· ${esc(n)}`).join('<br>');
+
+  let head = `<thead><tr><th class="geo">地区</th>`;
+  LEVELS.forEach(({l})=>{
+    head += `<th>${l}目标</th><th>${l}预算</th>`;
+  });
+  head += `<th>预算小计</th></tr></thead>`;
+
+  let body = '<tbody>';
+  (DATA.cities||[]).forEach(c=>{ body += renderRow(c, true); });
+  const tot = cityColTotals();
+  body += `<tr class="foot"><td class="geo">地市合计</td>`;
+  LEVELS.forEach(({k})=>{
+    body += `<td class="num">${fmtN(tot.t[k])}</td>`;
+    body += `<td class="num subTotal">${fmtN(tot.b[k])}</td>`;
+  });
+  body += `<td class="num subTotal">${fmtN(tot.bAll)}</td></tr>`;
+  body += '</tbody>';
+
+  document.getElementById('tblWrap').innerHTML =
+    `<table>${head}${body}</table>`;
+}
+async function saveBudget(inp){
+  const geo = inp.dataset.geo;
+  const level = inp.dataset.level;
+  const raw = inp.value.trim();
+  const amount = raw==='' ? null : Number(raw);
+  if(raw!=='' && Number.isNaN(amount)){
+    inp.classList.add('err'); setStatus('error','请输入数字'); return;
+  }
+  inp.classList.remove('err');
+  inp.classList.add('dirty');
+  setStatus('saving','保存中…');
+  try{
+    await apiPut('/budget', {geo_key:geo, period_key:DATA.period_key, level, amount});
+    // patch local
+    const patch = (row)=>{
+      if(row.geo_key===geo){
+        if(!row.budgets) row.budgets={};
+        if(amount==null) delete row.budgets[level]; else row.budgets[level]=amount;
+        return true;
+      }
+      return (row.districts||[]).some(patch);
+    };
+    (DATA.cities||[]).some(patch);
+    setStatus('saved','已保存');
+    setTimeout(()=>setStatus('',''), 1500);
+    render();
+  }catch(e){
+    inp.classList.add('err');
+    setStatus('error','保存失败');
+    console.error(e);
+  }
+}
+async function load(){
+  const pk = periodKey();
+  document.getElementById('tblWrap').innerHTML='<div class="empty">加载中…</div>';
+  try{
+    const me = await fetch('/api/funnel/me',{credentials:'same-origin'}).then(r=>r.ok?r.json():null).catch(()=>null);
+    if(me?.user){
+      const w=document.getElementById('whoami');
+      w.style.display=''; w.textContent=me.user.label||me.user.name;
+      document.getElementById('logoutBtn').style.display='inline-block';
+    }
+  }catch(_){}
+  try{
+    DATA = await apiGet(`/budget-matrix?period_key=${encodeURIComponent(pk)}`);
+    // default: collapse districts
+    openCities = new Set();
+    const u = new URL(location.href);
+    u.searchParams.set('period', DATA.period_key);
+    history.replaceState(null,'',u);
+    document.getElementById('funnelLink').href = '/?period='+encodeURIComponent(DATA.period_key);
+    document.getElementById('overviewLink').href = '/overview?period='+encodeURIComponent(DATA.period_key);
+    render();
+  }catch(e){
+    document.getElementById('tblWrap').innerHTML=
+      `<div class="empty">加载失败：${esc(e.message||e)}</div>`;
+  }
+}
+function doLogout(){ location.href='/logout'; }
+load();
+</script>
+</body>
+</html>

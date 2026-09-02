@@ -78,6 +78,7 @@ rsync "${RSYNC_OPTS[@]}" "$LOCAL_ROOT/funnel_v2.html" "$SERVER:$REMOTE_ROOT/"
 rsync "${RSYNC_OPTS[@]}" "$LOCAL_ROOT/overview.html" "$SERVER:$REMOTE_ROOT/"
 rsync "${RSYNC_OPTS[@]}" "$LOCAL_ROOT/report.html" "$SERVER:$REMOTE_ROOT/"
 rsync "${RSYNC_OPTS[@]}" "$LOCAL_ROOT/sales_eval.html" "$SERVER:$REMOTE_ROOT/"
+rsync "${RSYNC_OPTS[@]}" "$LOCAL_ROOT/budget.html" "$SERVER:$REMOTE_ROOT/"
 rsync "${RSYNC_OPTS[@]}" "$LOCAL_ROOT/md.js" "$SERVER:$REMOTE_ROOT/"
 rsync "${RSYNC_OPTS[@]}" "$LOCAL_ROOT/docs/factor-library-design.md" "$SERVER:$REMOTE_ROOT/docs/"
 

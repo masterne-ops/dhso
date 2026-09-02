@@ -133,6 +133,16 @@ def init_schema():
             updated_at  TEXT DEFAULT (datetime('now','localtime')),
             PRIMARY KEY (geo_key, period_key, side, org, person)
         );
+
+        -- 数据汇总页：各地市/区县 × 周期 × 漏斗档位的预算总额（元，手填）
+        CREATE TABLE IF NOT EXISTS funnel_budget (
+            geo_key    TEXT NOT NULL,
+            period_key TEXT NOT NULL,
+            level      TEXT NOT NULL,
+            amount     REAL NOT NULL,
+            updated_at TEXT DEFAULT (datetime('now','localtime')),
+            PRIMARY KEY (geo_key, period_key, level)
+        );
         """)
     seed_visit_purpose_map()
 

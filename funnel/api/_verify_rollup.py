@@ -64,6 +64,11 @@ def main():
     db.init_schema()
     import api.prod_db as p
     p.PROD_DB = PROD
+    # 卷积自测用合成 provider_target 数，避开 api/year_targets.json 的真实任务表
+    empty_yt = TMPD / "year_targets.json"
+    empty_yt.write_text("{}")
+    p.YEAR_TARGETS_PATH = empty_yt
+    p._year_targets_file.cache_clear()
     import api.rollup as R
 
     print("生产库可用:", p.available())
@@ -164,7 +169,7 @@ def main():
     ck("周卷积 = 8+6+4（月填写不串到周）", aw["sum"], 18)
     ck("周本级目标 = round(1000×10%/5)", aw["own"], 20)
 
-    print("\n── 激活/高级档：库里无下发目标，也无预设 ──")
+    print("\n── 激活/高级档：无任务表覆盖时库里也无预设 ──")
     r = R.rollup("浙江//", JUL)
     for lv in ("activated_v1", "activated", "senior"):
         ck(f"{lv} 无预设 → sum None", r["period"][lv]["sum"], None)

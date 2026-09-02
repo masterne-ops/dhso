@@ -26,13 +26,14 @@ from ..auth import current_user
 from ..users import authorize_geo, scoped_geo_tree
 from ..schemas import (
     StatePayload, OverviewItemPatch, SpecialPinPayload, SpecialTargetPayload,
-    SalesEvalPatch,
+    SalesEvalPatch, BudgetPayload,
 )
 from ..overview import build_overview, patch_item
 from ..week_rollup import build_week_rollup
 from ..factor_library import build_factor_library
 from ..report import build_report_data
 from ..sales_eval import build_sales_eval, patch_sales_eval
+from ..budget import build_matrix as budget_matrix, set_budget as budget_set
 from ..special import (
     add_pin as special_add_pin,
     build_special,
@@ -488,5 +489,31 @@ def delete_special_pin(request: Request,
     require_geo(request, geo_key)
     try:
         return special_remove_pin(geo_key, period_key, factor_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+# ── 数据汇总 / 预算 ───────────────────────────────────────────────────────────
+
+@router.get("/budget-matrix")
+def get_budget_matrix(request: Request, period_key: str = PeriodKey):
+    """
+    管辖范围内地市 + 区县的本期目标与手填预算矩阵。
+    目标只读；预算按格存 funnel_budget。
+    """
+    user = current_user(request)
+    try:
+        return budget_matrix(user, period_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.put("/budget")
+def put_budget(request: Request, payload: BudgetPayload):
+    """手填/清空某一格预算（元）。"""
+    require_geo(request, payload.geo_key)
+    try:
+        return budget_set(payload.geo_key, payload.period_key,
+                          payload.level, payload.amount)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))

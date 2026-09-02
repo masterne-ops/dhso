@@ -1,0 +1,30 @@
+{
+  "2026": {
+    "source": "城市维度服务商目标分解表-浙江 · 服务商指标（省区填写）",
+    "as_of": "2026-08",
+    "levels": {
+      "authorized": "服务商签约数（含个人）",
+      "activated": "V2及以上服务商数",
+      "senior": "V3及以上服务商数"
+    },
+    "note": "家数已取整。与漏斗授权/V2+/V3+ 等级口径对齐。无 V1+ 档。",
+    "province": {
+      "authorized": 12000,
+      "activated": 7010,
+      "senior": 2340
+    },
+    "cities": {
+      "杭州市": {"authorized": 2800, "activated": 1600, "senior": 550},
+      "湖州市": {"authorized": 850, "activated": 500, "senior": 160},
+      "嘉兴市": {"authorized": 1050, "activated": 610, "senior": 180},
+      "金华市": {"authorized": 1350, "activated": 820, "senior": 290},
+      "丽水市": {"authorized": 480, "activated": 280, "senior": 100},
+      "宁波市": {"authorized": 1600, "activated": 960, "senior": 350},
+      "衢州市": {"authorized": 750, "activated": 400, "senior": 120},
+      "绍兴市": {"authorized": 950, "activated": 550, "senior": 180},
+      "台州市": {"authorized": 670, "activated": 340, "senior": 120},
+      "温州市": {"authorized": 1350, "activated": 850, "senior": 260},
+      "舟山市": {"authorized": 150, "activated": 100, "senior": 30}
+    }
+  }
+}

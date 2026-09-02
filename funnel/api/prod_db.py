@@ -44,9 +44,11 @@ V1 单独成一阶的理由：授权→V1 是「签约后首次开单」，V1→
 """
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import threading
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -290,17 +292,15 @@ def _geo_filter(city: Optional[str], district: Optional[str],
 
 
 # ── 目标（全年 + 本期应达成）────────────────────────────────────────────────────
-# 全年目标取自 provider_target（地市级，12 行 = 浙江合计 + 11 地市，年初下达）。
-# 库里的值即权威值，页面只读不可改。
+# 优先：api/year_targets.json（省区填写的年底存量任务表，与漏斗等级同口径）。
+# 回落：provider_target（库内年初行；仅有签约总数时 V2+/V3+ 仍空）。
 #
-# ⚠️ 三处口径限制，都会体现在返回的 notes 里：
-# 1. **只到地市级**。选到区县时没有下发目标，返回 null —— 不按体量摊派，那是编数。
-# 2. **激活目标库里没有**。provider_target 只有签约总数和 V2/V3/V4 分档；
-#    kpi_rhythm 有「服务商激活」节奏曲线，但没有对应的年度激活目标值。
-# 3. **V2/V3/V4 是安装红包成交额分级**（V3 = 成交额 1万–3万），漏斗的「高级服务商
-#    V3+」是 provider_contract.服务商等级 签约口径。两套标准不可混用，故不把
-#    安装红包V3_家数 当作高级服务商目标，该行留空。
+# ⚠️ 口径限制（notes 里也会写）：
+# 1. **只到地市级**。区县无下发 → null，不按体量摊派。
+# 2. **V1+ 任务表无档** → activated_v1 恒空，可手填。
+# 3. 主缺口看「全年目标 − 期末存量」；本期目标 = 全年 × 月节奏，只作过程辅看。
 TARGET_CITY_ALL = "浙江合计"
+YEAR_TARGETS_PATH = Path(__file__).with_name("year_targets.json")
 
 # 本期应达成 = 全年目标 × 该月节奏占比（kpi_rhythm）。
 # 节奏是「全年目标在 1–12 月各应完成百分之几」，12 个月占比之和为 1。
@@ -313,6 +313,56 @@ TARGET_CITY_ALL = "浙江合计"
 # V2服务商 / V3服务商 / V4及以上服务商（指标均为 SMB服务商），另有两条进度条
 # （指标为「省区SO进度条」「客户SI进度条(返利前)」）。7 组占比合计均为 1.0。
 RHYTHM_SIGN = ("SMB服务商", "服务商签约")
+# 各档优先用对应节奏；没有则回落到签约节奏（避免误用「服务商激活」干扰组）。
+RHYTHM_BY_LEVEL = {
+    "authorized": [RHYTHM_SIGN],
+    "activated": [("SMB服务商", "V2服务商"), RHYTHM_SIGN],
+    "senior": [("SMB服务商", "V3服务商"), RHYTHM_SIGN],
+}
+
+
+@lru_cache(maxsize=1)
+def _year_targets_file() -> Dict[str, Any]:
+    """省区填写任务表。文件缺失或坏 JSON → 空 dict，回落 provider_target。"""
+    try:
+        with open(YEAR_TARGETS_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def year_targets_overlay(year: Optional[int],
+                         city: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """
+    返回该年全省或某市的全年三档目标（authorized / activated / senior），家数整数。
+    无该年配置 → None。
+    """
+    if year is None:
+        return None
+    blob = _year_targets_file().get(str(year))
+    if not isinstance(blob, dict):
+        return None
+    if city:
+        row = (blob.get("cities") or {}).get(city)
+        if row is None:
+            row = (blob.get("cities") or {}).get(city.rstrip("市"))
+        if not isinstance(row, dict):
+            return None
+    else:
+        row = blob.get("province")
+        if not isinstance(row, dict):
+            return None
+    out = {
+        "authorized": int(round(row["authorized"])) if row.get("authorized") is not None else None,
+        "activated": int(round(row["activated"])) if row.get("activated") is not None else None,
+        "senior": int(round(row["senior"])) if row.get("senior") is not None else None,
+        "source": blob.get("source") or "year_targets.json",
+        "as_of": blob.get("as_of"),
+    }
+    if out["authorized"] is None and out["activated"] is None and out["senior"] is None:
+        return None
+    return out
 
 
 def _target_row(conn, city: Optional[str], year: int):
@@ -329,13 +379,17 @@ def _target_row(conn, city: Optional[str], year: int):
     return row
 
 
-def _month_rhythm(conn, year: int, month: int) -> Optional[float]:
-    """该月的签约节奏占比。取不到返回 None（调用方回落到均分）。"""
-    row = conn.execute(
-        "SELECT 占比 FROM kpi_rhythm WHERE 指标 = ? AND 适用范围 = ? "
-        "AND 年度 = ? AND 月份 = ?",
-        (*RHYTHM_SIGN, year, month)).fetchone()
-    return row["占比"] if row and row["占比"] is not None else None
+def _month_rhythm(conn, year: int, month: int,
+                  pairs=None) -> Optional[float]:
+    """该月节奏占比。pairs 为 (指标, 适用范围) 候选列表，命中第一个。"""
+    for pair in (pairs or [RHYTHM_SIGN]):
+        row = conn.execute(
+            "SELECT 占比 FROM kpi_rhythm WHERE 指标 = ? AND 适用范围 = ? "
+            "AND 年度 = ? AND 月份 = ?",
+            (*pair, year, month)).fetchone()
+        if row and row["占比"] is not None:
+            return row["占比"]
+    return None
 
 
 def targets(city: Optional[str] = None, district: Optional[str] = None,
@@ -343,7 +397,7 @@ def targets(city: Optional[str] = None, district: Optional[str] = None,
             year: Optional[int] = None, month: Optional[int] = None,
             week_share: Optional[float] = None) -> Optional[Dict[str, Any]]:
     """
-    全年目标（库里权威值，只读）+ 本期目标（按月节奏分解）。
+    全年目标（任务表/库内权威值，只读）+ 本期目标（按月节奏分解）。
 
     本期目标 = 全年目标 × 当月节奏占比；周则再按当月周数均分。
     「周就是月的均分」—— 节奏只到月粒度，周内没有更细的下发曲线。
@@ -354,7 +408,7 @@ def targets(city: Optional[str] = None, district: Optional[str] = None,
         return None
 
     with _conn() as conn:
-        # 区县没有下发目标：provider_target 只到地市
+        # 区县没有下发目标：任务表 / provider_target 都只到地市
         if district:
             return {
                 "ytd": {"authorized": None, "activated_v1": None,
@@ -363,12 +417,13 @@ def targets(city: Optional[str] = None, district: Optional[str] = None,
                            "activated": None, "senior": None},
                 "scope": "district",
                 "editable": True,
-                "notes": ["目标只下发到地市级（provider_target），"
-                          "区县无下发目标，请手动填写。"],
+                "notes": ["目标只下发到地市级，区县无下发目标，请手动填写。"],
             }
 
+        overlay = year_targets_overlay(year, city)
         row = _target_row(conn, city, year)
-        if row is None:
+
+        if overlay is None and row is None:
             return {
                 "ytd": {"authorized": None, "activated_v1": None,
                         "activated": None, "senior": None},
@@ -376,59 +431,79 @@ def targets(city: Optional[str] = None, district: Optional[str] = None,
                            "activated": None, "senior": None},
                 "scope": "city" if city else "province",
                 "editable": True,
-                "notes": [f"{year} 年{city or '全省'}未找到下发目标（provider_target）。"],
+                "notes": [f"{year} 年{city or '全省'}未找到下发目标"
+                          f"（year_targets / provider_target）。"],
             }
 
-        keys = row.keys()
-        authorized = row["服务商签约数_含个人"] if "服务商签约数_含个人" in keys else None
-        pool = row["服务商预测总家数"] if "服务商预测总家数" in keys else None
-        new_sign = row["新签目标"] if "新签目标" in keys else None
+        keys = row.keys() if row is not None else []
+        pool = row["服务商预测总家数"] if row is not None and "服务商预测总家数" in keys else None
+        new_sign = row["新签目标"] if row is not None and "新签目标" in keys else None
 
-        rhythm = _month_rhythm(conn, year, month)
-        notes = [
-            "全年目标取自 provider_target（年初下达），库内即权威值，页面不可改。",
-        ]
+        if overlay is not None:
+            authorized = overlay["authorized"]
+            activated = overlay["activated"]
+            senior = overlay["senior"]
+            notes = [
+                f"全年目标取自「{overlay['source']}」"
+                + (f"（{overlay['as_of']}）" if overlay.get("as_of") else "")
+                + "，与漏斗等级同口径；家数已取整，页面不可改。",
+                "主看全年缺口（全年目标 − 期末存量）；本期目标按月节奏分解，作过程辅看。",
+                "「已开单 V1+」任务表无对应档，请手动填写。",
+            ]
+            source_row = {"地市": city or TARGET_CITY_ALL, "年度": year,
+                          "source": "year_targets"}
+        else:
+            authorized = row["服务商签约数_含个人"] if "服务商签约数_含个人" in keys else None
+            activated = None
+            senior = None
+            notes = [
+                "全年目标取自 provider_target（年初下达），库内即权威值，页面不可改。",
+                "「已开单 V1+」「已激活 V2+」「高级服务商 V3+」本年来源无省区填写"
+                "任务表覆盖，V2+/V3+ 不套用库内安装红包分档（若有），请手动填写。",
+            ]
+            source_row = {"地市": row["地市"], "年度": row["年度"],
+                          "source": "provider_target"}
+
+        rhythm = _month_rhythm(conn, year, month, RHYTHM_BY_LEVEL["authorized"])
+        rhythm_src = "服务商签约"
         if rhythm is None:
-            # 没有节奏曲线就按 1/12 均分 —— 说明清楚，别让人以为这是下发节奏
             rhythm = 1.0 / 12
             notes.append(f"{year} 年未找到「服务商签约」月度节奏（kpi_rhythm），"
                          f"本期目标按 1/12 均分估算。")
         else:
             notes.append(f"本期目标 = 全年目标 × {month} 月节奏占比 "
-                         f"{round(rhythm * 100, 1)}%（kpi_rhythm）。")
-            # 2026 年 1 月节奏是 70%（其余 11 个月各 1~4%）—— 那是年初结转的存量
-            # 签约数，不是 1 月的新签目标。签约是累计存量指标，节奏曲线把开年存量
-            # 压在了 1 月这一格。照公式算不错，但读成「1 月要新签 8400 家」就错了，
-            # 所以占比异常大的月份显式提示一句。
+                         f"{round(rhythm * 100, 1)}%（kpi_rhythm · {rhythm_src}）。")
             if rhythm > 0.3:
                 notes.append(f"⚠️ {month} 月节奏占比达 {round(rhythm * 100)}%，"
                              f"这一格是年初结转的存量签约数，不是当月新签目标，"
                              f"不宜直接当增量考核。")
 
-        share = rhythm * (week_share if week_share else 1.0)
         if week_share:
             notes.append("周目标 = 月目标 ÷ 当月周数（节奏只到月粒度，周内按均分）。")
 
-        def per(v):
-            return round(v * share) if v is not None else None
-
-        notes.append("「已开单 V1+」「已激活 V2+」「高级服务商 V3+」库中均无对应"
-                     "下发目标：provider_target 只有签约总数与安装红包 V2/V3/V4 "
-                     "分档，而该分档是成交额口径、与漏斗的签约等级口径不同，"
-                     "故不套用。这三档请手动填写。")
+        def per(v, level: str):
+            if v is None:
+                return None
+            r = _month_rhythm(conn, year, month, RHYTHM_BY_LEVEL.get(level, [RHYTHM_SIGN]))
+            if r is None:
+                r = rhythm
+            share = r * (week_share if week_share else 1.0)
+            return int(round(v * share))
 
         return {
             "ytd": {"authorized": authorized, "activated_v1": None,
-                    "activated": None, "senior": None},
-            "period": {"authorized": per(authorized), "activated_v1": None,
-                       "activated": None, "senior": None},
+                    "activated": activated, "senior": senior},
+            "period": {"authorized": per(authorized, "authorized"),
+                       "activated_v1": None,
+                       "activated": per(activated, "activated"),
+                       "senior": per(senior, "senior")},
             "scope": "city" if city else "province",
             "editable": False,          # 全年目标只读
             "period_editable": True,    # 本期目标是预设值，用户可改
             "rhythm": round(rhythm, 6),
             "week_share": week_share,
             "aside": {"pool_target": pool, "new_sign_target": new_sign},
-            "source_row": {"地市": row["地市"], "年度": row["年度"]},
+            "source_row": source_row,
             "notes": notes,
         }
 

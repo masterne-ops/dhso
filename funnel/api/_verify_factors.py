@@ -290,25 +290,31 @@ def main():
                          year=m["year"], month=m["month"],
                          week_share=m["week_share"])
 
-    # 全省 2026-07：全年 12000，7 月节奏 10% → 本期 1200
+    # 全省 2026-07：全年 12000（省区填写任务表），7 月节奏 10% → 本期 1200
     t = tg(None, None, "2026-07")
-    ck("全省 全年授权目标（库里权威值）", t["ytd"]["authorized"], 12000)
-    ck("全省 7月目标 = 12000 × 10%", t["period"]["authorized"], 1200)
+    ck("全省 全年授权目标（任务表）", t["ytd"]["authorized"], 12000)
+    ck("全省 全年 V2+ 目标（任务表）", t["ytd"]["activated"], 7010)
+    ck("全省 全年 V3+ 目标（任务表）", t["ytd"]["senior"], 2340)
+    ck("全省 7月授权 = 12000 × 10%", t["period"]["authorized"], 1200)
+    ck("全省 7月 V2+ = 7010 × 10%", t["period"]["activated"], 701)
+    ck("全省 7月 V3+ = 2340 × 10%", t["period"]["senior"], 234)
     ck("全年目标只读", t["editable"], False)
     ck("本期目标可改", t["period_editable"], True)
-    ck("激活无下发目标", t["ytd"]["activated"], None)
-    ck("高级服务商无下发目标（红包分档口径不同，不套用）", t["ytd"]["senior"], None)
+    ck("V1+ 无任务表档", t["ytd"]["activated_v1"], None)
     ck("旁注：预测总家数", t["aside"]["pool_target"], 13591)
+    ck("来源 year_targets", t["source_row"]["source"], "year_targets")
 
-    # 杭州市：全年 2720，7 月 → 272
+    # 杭州市：任务表 2800 / 1600 / 550（覆盖库里旧的 2720）
     t = tg("杭州市", None, "2026-07")
-    ck("杭州市 全年", t["ytd"]["authorized"], 2720)
-    ck("杭州市 7月 = 2720 × 10%", t["period"]["authorized"], 272)
+    ck("杭州市 全年授权", t["ytd"]["authorized"], 2800)
+    ck("杭州市 全年 V2+", t["ytd"]["activated"], 1600)
+    ck("杭州市 全年 V3+", t["ytd"]["senior"], 550)
+    ck("杭州市 7月授权 = 2800 × 10%", t["period"]["authorized"], 280)
 
-    # 「宁波市」查库里的「宁波」—— 去尾重试
+    # 「宁波市」任务表有完整市名；同时库里是「宁波」—— 优先任务表
     t = tg("宁波市", None, "2026-07")
-    ck("宁波市 → 库里「宁波」（去「市」重试命中）", t["ytd"]["authorized"], 1800)
-    ck("命中行的地市名", t["source_row"]["地市"], "宁波")
+    ck("宁波市 全年授权（任务表）", t["ytd"]["authorized"], 1600)
+    ck("宁波市 V2+", t["ytd"]["activated"], 960)
 
     # 周 = 月 ÷ 当月周数。2026-07 有 5 个 ISO 周（周四落在 7 月）
     m = period_meta("2026-W30")
@@ -350,15 +356,28 @@ def main():
                (0.90 / 11, "服务商签约"))
     c3.commit(); c3.close()
 
-    print("\n  无节奏曲线的年度：回落 1/12 均分并在 notes 里说明")
+    print("\n  无任务表覆盖的年度：回落 provider_target；无 V2+/V3+")
     c2 = sqlite3.connect(TMP)
     c2.executemany("INSERT INTO provider_target VALUES(?,?,?,?,?)",
                    [(2027, "浙江合计", 14000, 12000, 3700)])
     c2.commit(); c2.close()
+    p._year_targets_file.cache_clear()
     t = tg(None, None, "2027-07")
+    ck("2027 授权来自 provider_target", t["ytd"]["authorized"], 12000)
+    ck("2027 V2+ 仍空（无任务表）", t["ytd"]["activated"], None)
     ck("2027 本期 = 12000/12", t["period"]["authorized"], 1000)
     ck("notes 提到按 1/12 均分",
        any("1/12" in n for n in t["notes"]), True)
+
+    print("\n  provider_target 去尾重试（无任务表的年份）")
+    c2 = sqlite3.connect(TMP)
+    c2.execute("INSERT INTO provider_target VALUES(?,?,?,?,?)",
+               (2027, "宁波", 2000, 1800, 500))
+    c2.commit(); c2.close()
+    t = tg("宁波市", None, "2027-07")
+    ck("2027 宁波市 → 库里「宁波」", t["ytd"]["authorized"], 1800)
+    ck("命中行的地市名", t["source_row"]["地市"], "宁波")
+    ck("来源 provider_target", t["source_row"]["source"], "provider_target")
 
     print("\n  12 个月本期目标之和 == 全年目标（节奏占比加总为 1）")
     tot = sum(tg(None, None, f"2026-{mm:02d}")["period"]["authorized"]

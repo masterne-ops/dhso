@@ -31,3 +31,10 @@ class SalesEvalPatch(BaseModel):
 class SpecialTargetPayload(BaseModel):
     factor_id: str
     target: Optional[float] = None   # null = 清空
+
+
+class BudgetPayload(BaseModel):
+    geo_key: str
+    period_key: str
+    level: str                       # authorized | activated_v1 | activated | senior
+    amount: Optional[float] = None   # null = 清空该格预算

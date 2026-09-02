@@ -21,6 +21,7 @@ PAGE = STATIC_DIR / "funnel_v2.html"
 OVERVIEW_PAGE = STATIC_DIR / "overview.html"
 REPORT_PAGE = STATIC_DIR / "report.html"
 SALES_EVAL_PAGE = STATIC_DIR / "sales_eval.html"
+BUDGET_PAGE = STATIC_DIR / "budget.html"
 
 # Ensure the schema exists as soon as the module is imported, so the app works
 # no matter how it is started (uvicorn, TestClient, or an embedded import).
@@ -225,6 +226,13 @@ def report_page():
 def sales_eval_page():
     """业务员/代理商能力评估页。"""
     return FileResponse(SALES_EVAL_PAGE, media_type="text/html",
+                        headers={"Cache-Control": "no-store"})
+
+
+@app.get("/budget", include_in_schema=False)
+def budget_page():
+    """数据汇总 / 预算：各地市区县本期目标 + 手填预算矩阵。"""
+    return FileResponse(BUDGET_PAGE, media_type="text/html",
                         headers={"Cache-Control": "no-store"})
 
 

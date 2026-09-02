@@ -197,6 +197,10 @@ details.foldCard > summary .cSub{margin-left:auto}
 /* 全年目标取库里的下发值时不可改，渲染成实心文本而非虚线输入框 */
 .tgtLocked{display:inline-block;padding:2px 5px;font-size:12px;font-weight:600;
            color:var(--text);cursor:help;white-space:nowrap}
+.ytdGap{font-size:12px;font-weight:600;white-space:nowrap}
+.ytdGap.short{color:var(--red)}
+.ytdGap.over{color:var(--green)}
+.ytdGap.ok{color:var(--green)}
 /* 下级卷积列：数值 + 与本级目标的差额。差额不用红绿 —— 高于/低于本级目标
    哪个算问题取决于管理意图，染色会替用户下判断。 */
 .rollSum{font-weight:600;color:var(--text);cursor:help}
@@ -473,6 +477,8 @@ body.dockLocked{padding-right:var(--dock-w)}
   <div class="hdrTop">
     <h1>🔻 服务商转化漏斗</h1>
     <a href="/overview" id="overviewLink" class="navLink">管辖总览</a>
+    <button type="button" id="budgetBtn" class="navLink reportBtn" onclick="openBudget()"
+            title="按当前周期汇总各地市/区县目标，并填写预算">📊 数据汇总</button>
     <button type="button" id="reportBtn" class="navLink reportBtn" onclick="openReport()"
             title="按当前地区与周期生成报告（新窗口）">📄 生成报告</button>
     <button type="button" id="salesEvalBtn" class="navLink reportBtn" onclick="openSalesEval()"
@@ -502,7 +508,7 @@ body.dockLocked{padding-right:var(--dock-w)}
     <details class="card foldCard" id="progressCard" open>
       <summary class="cHdr">
         <span class="cTitle">📊 完成情况</span>
-        <span class="cSub">点标题折叠 · 点击目标数字可编辑</span>
+        <span class="cSub">主看全年还差 · 本期按节奏辅看 · 点标题折叠</span>
       </summary>
       <div id="sideWrap"></div>
     </details>
@@ -1215,6 +1221,12 @@ function openReport(){
   window.open(u, '_blank', 'noopener');
 }
 
+function openBudget(){
+  if(!S.periodKey){ alert('请先选择周期'); return; }
+  const u = `/budget?period=${encodeURIComponent(periodKey())}`;
+  window.open(u, '_blank', 'noopener');
+}
+
 function openSalesEval(){
   if(!S.periodKey){ alert('请先选择周期'); return; }
   const u = `/sales-eval?geo_key=${encodeURIComponent(geoKey())}&period_key=${encodeURIComponent(periodKey())}`;
@@ -1489,7 +1501,7 @@ function renderFunnel(){
 }
 
 // ── Side Table (期末存量 + 本期完成率，目标可填) ───────────────────────────────
-const TGT_LOCK_TIP = '年初下达的全年目标（provider_target），库内即权威值，不可修改';
+const TGT_LOCK_TIP = '年底任务目标（省区填写），与漏斗等级同口径，不可修改';
 
 // 本期目标输入框的 tooltip：说清预设值是怎么算出来的，以及用户可以改。
 // 口径说明只走 tooltip，不占版面（与页面其它说明一致）。
@@ -1497,7 +1509,16 @@ function periodTgtTip(level){
   if(!TARGETS) return '本期目标（可手填）';
   const parts = (TARGETS.notes||[]).slice();
   if(TARGETS.period?.[level]==null) parts.push('该档无预设值，请手填。');
-  return parts.join('\n') || '本期目标（可手填）';
+  return parts.join('\n') || '本期目标 = 全年 × 月节奏（过程辅看）';
+}
+function ytdGapHtml(act, tgt){
+  if(tgt==null) return '—';
+  const gap = tgt - act;
+  if(gap > 0)
+    return `<span class="ytdGap short" title="全年目标 − 期末存量">${gap.toLocaleString()}</span>`;
+  if(gap < 0)
+    return `<span class="ytdGap over" title="期末存量已超全年目标">超额 +${(-gap).toLocaleString()}</span>`;
+  return `<span class="ytdGap ok" title="已达全年目标">已达标</span>`;
 }
 
 // ── 下级卷积单元格 ────────────────────────────────────────────────────────────
@@ -1570,9 +1591,10 @@ function renderSideTable(){
   const rollLbl = rollKind==='city' ? '地市卷积' : '区县卷积';
   let h = `<table class="sTable"><thead><tr>
     <th>层级</th><th title="截至本周期最后一天的存量（签约日期/激活时间 ≤ 期末）">期末存量</th><th>全年目标</th>
+    <th title="全年目标 − 期末存量（主缺口）">差距</th>
     ${showRoll?`<th>${rollLbl}</th>`:''}<th>完成率</th>
-    <th>本期+</th><th>本期目标</th>
-    ${showRoll?`<th>${rollLbl}</th>`:''}<th>完成率</th>
+    <th>本期+</th><th title="全年目标 × 当月节奏占比（过程辅看）">本期目标</th>
+    ${showRoll?`<th>${rollLbl}</th>`:''}<th title="本期增量 / 本期目标">月进度</th>
   </tr></thead><tbody>`;
   LEVELS.forEach(({k,l})=>{
     const yAct = y[k]??0; const yTgt = getTarget(k,false);
@@ -1583,14 +1605,15 @@ function renderSideTable(){
     const pCol = pPct!=null?rateColor(pPct):'';
     const yBar = yPct!=null?`<span class="pBar"><span class="pBarF ${yCol}" style="width:${Math.min(yPct,100)}%"></span></span><span class="pct ${yCol}">${yPct}%</span>`:'—';
     const pBar = pPct!=null?`<span class="pBar"><span class="pBarF ${pCol}" style="width:${Math.min(pPct,100)}%"></span></span><span class="pct ${pCol}">${pPct}%</span>`:'—';
-    // 全年目标：库里有下发值就显示成只读文本（不是输入框）—— 那是年初下达的
-    // 权威值，页面无权改。库里没有（区县级/该档无下发）才给输入框手填。
+    // 全年目标：库里/任务表有下发值就显示成只读文本（不是输入框）—— 权威值，页面无权改。
+    // 库里没有（区县级/该档无下发）才给输入框手填。
     const yTgtCell = ytdLocked(k)
       ? `<span class="tgtLocked" title="${TGT_LOCK_TIP}">${yTgt.toLocaleString()} 🔒</span>`
       : `<span class="tgtCell"><input class="tgtInput" type="number" value="${yTgt??''}" placeholder="填目标" onchange="saveTarget('${k}',false,this.value)" title="库中无下发目标，可手填"></span>`;
     // 本期目标：预设值来自节奏分解，可改
     const pTgtCell = `<span class="tgtCell"><input class="tgtInput" type="number" value="${pTgt??''}" placeholder="填目标" onchange="saveTarget('${k}',true,this.value)" title="${periodTgtTip(k)}"></span>`;
     h+=`<tr><td><b>${l}</b></td><td>${yAct}</td><td>${yTgtCell}</td>
+            <td>${ytdGapHtml(yAct,yTgt)}</td>
             ${showRoll?rollCell('ytd',k):''}<td>${yBar}</td>
             <td>+${pAct}</td><td>${pTgtCell}</td>
             ${showRoll?rollCell('period',k):''}<td>${pBar}</td></tr>`;

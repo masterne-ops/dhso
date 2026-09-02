@@ -187,15 +187,14 @@ def rollup(geo_key: str, period_key: str) -> Dict[str, Any]:
 
     notes: List[str] = []
     if kind == "city":
-        notes.append("卷积口径：11 个地市逐个取「用户改过的值 ?? 该地市节奏预设值」"
-                     "后求和。地市在 provider_target 里都有下发值，故预设齐全。")
+        notes.append("卷积口径：11 个地市逐个取「用户改过的值 ?? 该地市全年/节奏预设」"
+                     "后求和。2026 年预设来自省区填写任务表（签约/V2+/V3+）。")
     else:
         notes.append("卷积口径：本市各区县逐个取「用户改过的值 ?? 预设值」后求和。"
-                     "⚠️ provider_target 只下发到地市级，区县没有预设值 —— "
+                     "⚠️ 目标只下发到地市级，区县没有预设值 —— "
                      "没人手填过的区县是真缺口，不按体量摊派（那是编数）。")
-    notes.append("卷积值仅作参照，不写回、不覆盖本级下发目标：本级目标是年初独立"
-                 "下达的（provider_target 里自己一行），通常留有缓冲，"
-                 "与下级之和不相等是正常的。")
+    notes.append("卷积值仅作参照，不写回、不覆盖本级下发目标：本级目标是独立"
+                 "下达的全年任务，通常留有缓冲，与下级之和不相等是正常的。")
     if any(pack("period")[lv]["n_missing"] for lv in LEVELS):
         notes.append("有下级缺目标值，缺口按「未纳入」处理、不按 0 计入 —— "
                      "否则卷积值看起来是加全了的。")
