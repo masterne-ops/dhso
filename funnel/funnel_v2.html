@@ -899,6 +899,8 @@ function setTarget(level, isPeriod, val){
     : (overrides[gk].ytd = overrides[gk].ytd || {});
   if(val===null) delete bucket[level]; else bucket[level] = val;
   lsSet('targets', overrides);
+  // 本地改目标后作废卷积缓存，下次切回本作用域会重算
+  _apiCache.delete(cacheKey('rollup'));
 }
 function getManualFactor(factorKey, convKey){
   const gk = geoKey(); const pk = periodKey();
@@ -915,9 +917,27 @@ function setManualFactor(factorKey, convKey, val){
   lsSet('manual', m);
 }
 
-// 生产库返回的漏斗数（/api/funnel/data），按 geo+period 缓存一份。
-// 为 null 表示取不到（本地开发/库不可用），此时回落内置演示数据。
+// 生产库返回的漏斗数（/api/funnel/data），按 geo+period+cert 缓存在前端，
+// 来回切换同一作用域不再打服务器。
 let PROD = null;
+const _apiCache = new Map(); // key -> payload
+let _loadGen = 0;
+
+function cacheKey(kind){
+  if(kind==='data') return `data|${dataQS()}`;
+  return `${kind}|${scopeQS()}`;
+}
+function cacheGet(kind){
+  return _apiCache.get(cacheKey(kind));
+}
+function cacheSet(kind, val){
+  _apiCache.set(cacheKey(kind), val);
+  // 粗暴上限，避免长会话无限涨
+  if(_apiCache.size > 80){
+    const first = _apiCache.keys().next().value;
+    _apiCache.delete(first);
+  }
+}
 
 function demoData(){
   const prov = GEO[S.province] || GEO['浙江省'] || {};
@@ -973,9 +993,12 @@ function currentData(){
 
 async function loadProdData(){
   if(!apiAvailable){ PROD=null; return; }
+  const hit = cacheGet('data');
+  if(hit!==undefined){ PROD=hit; return; }
   try{
     const r = await apiGet(`/data${dataQS()}`);
     PROD = (r.source==='prod' && r.data) ? r.data : null;
+    cacheSet('data', PROD);
     setDataBadge(r);
   }catch(e){ PROD=null; }
 }
@@ -988,10 +1011,13 @@ let FACTORS = {}, FACTOR_DETAIL = {};
 
 async function loadFactorValues(){
   if(!apiAvailable){ FACTORS={}; FACTOR_DETAIL={}; return; }
+  const hit = cacheGet('factors');
+  if(hit){ FACTORS=hit.values; FACTOR_DETAIL=hit.details; return; }
   try{
     const r = await apiGet(`/factor-values${scopeQS()}`);
     FACTORS = r.values || {};
     FACTOR_DETAIL = r.details || {};
+    cacheSet('factors', {values:FACTORS, details:FACTOR_DETAIL});
   }catch(e){ FACTORS={}; FACTOR_DETAIL={}; }
 }
 
@@ -1005,9 +1031,12 @@ let TARGETS = null;
 
 async function loadTargets(){
   if(!apiAvailable){ TARGETS=null; return; }
+  const hit = cacheGet('targets');
+  if(hit!==undefined){ TARGETS=hit; return; }
   try{
     const r = await apiGet(`/targets${scopeQS()}`);
     TARGETS = r.targets || null;
+    cacheSet('targets', TARGETS);
   }catch(e){ TARGETS=null; }
 }
 
@@ -1017,17 +1046,23 @@ async function loadTargets(){
 let ROLLUP = null;
 async function loadRollup(){
   if(!apiAvailable){ ROLLUP=null; return; }
+  const hit = cacheGet('rollup');
+  if(hit!==undefined){ ROLLUP=hit; return; }
   try{
     const r = await apiGet(`/target-rollup${scopeQS()}`);
     ROLLUP = r.available ? r : null;
+    cacheSet('rollup', ROLLUP);
   }catch(e){ ROLLUP=null; }
 }
 
 let SPECIAL = null;
 async function loadSpecial(){
   if(!apiAvailable){ SPECIAL=null; return; }
+  const hit = cacheGet('special');
+  if(hit!==undefined){ SPECIAL=hit; return; }
   try{
     SPECIAL = await apiGet(`/special-targets${scopeQS()}`);
+    cacheSet('special', SPECIAL);
   }catch(e){ SPECIAL=null; }
 }
 
@@ -2796,17 +2831,23 @@ function paint(){
   renderNotes();
   renderDock();
 }
-// 切地区/切周期都要重取生产数据 —— 取完再 paint 一次，否则先画的是旧数字
-function render(){
+// 切地区/切周期：先画壳，再并行拉数，全部落地后只 paint 一次（避免 7 次重绘卡顿）。
+// _loadGen 丢弃过期响应，快速连点不会把旧周期数据盖上来。
+async function render(){
+  const gen = ++_loadGen;
   paint();
-  loadSlice();
-  loadWeekRollup().then(paint);
-  // 漏斗数、因子值、下发目标并行取，各自到了就重画一次
-  loadProdData().then(paint);
-  loadFactorValues().then(paint);
-  loadTargets().then(paint);
-  loadRollup().then(paint);   // 卷积要遍历全部下级，最慢，单独走
-  loadSpecial().then(paint);
+  loadSlice(); // 切片有自己的 pendingSave / scope 守卫
+  const jobs = [
+    loadWeekRollup(),
+    loadProdData(),
+    loadFactorValues(),
+    loadTargets(),
+    loadRollup(),
+    loadSpecial(),
+  ];
+  await Promise.all(jobs.map(p => Promise.resolve(p).catch(()=>null)));
+  if(gen !== _loadGen) return;
+  paint();
 }
 
 // Probe the API once; fall back to pure localStorage if the server isn't there
@@ -2817,14 +2858,16 @@ function render(){
     await apiGet('/factor-defs');
     apiAvailable=true;
     await loadGeoTree();     // 先拿地区树，S.province 可能被改成库口径
-    await loadProdData();    // 再拿漏斗数（含 badge 文案）
-    await loadFactorValues();// 关键因素真实值
-    await loadTargets();     // 下发目标（全年只读 + 本期预设）
-    await loadRollup();      // 下级卷积目标
-    await loadSpecial();     // 专项目标
+    // 首屏并行拉齐主数据，再一次 paint（原先串行 5 段，首屏慢一截）
+    await Promise.all([
+      loadProdData(),
+      loadFactorValues(),
+      loadTargets(),
+      loadRollup(),
+      loadSpecial(),
+    ]);
     paint();
-    await loadSlice();
-    await loadWeekRollup();
+    await Promise.all([loadSlice(), loadWeekRollup()]);
     paint();
   }catch(e){
     apiAvailable=false;

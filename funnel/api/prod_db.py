@@ -128,13 +128,32 @@ def _ymd(v: Any) -> Optional[str]:
 def _prod_file_stamp() -> str:
     try:
         st = PROD_DB.stat()
-        return f"{int(st.st_mtime)}:{st.st_size}"
+        # ns 精度：同秒内 UPDATE 占比也不会误命中旧节奏缓存
+        return f"{getattr(st, 'st_mtime_ns', int(st.st_mtime * 1e9))}:{st.st_size}"
     except OSError:
         return "missing"
 
 
 _SO_MEM: Dict[Tuple[str, str, str], Dict[str, Dict[str, Optional[str]]]] = {}
 _SO_LOCK = threading.Lock()
+# 生产库文件未变时，签约主表只加载一次，切地区不再反复 SELECT 全表。
+_CONTRACT_MEM: Dict[str, List[Dict[str, Any]]] = {}
+_CONTRACT_LOCK = threading.Lock()
+_GEO_TREE_MEM: Dict[str, Optional[Dict[str, Any]]] = {}
+# key = (stamp, year, month) → {level: 占比|None}；None = 库里无该月节奏
+_RHYTHM_MEM: Dict[Tuple[str, int, int], Dict[str, Optional[float]]] = {}
+_RHYTHM_LOCK = threading.Lock()
+_FRESH_MEM: Dict[str, Dict[str, Optional[str]]] = {}
+# key = (stamp, year, city_key) → provider_target 行（dict）或 None
+_TARGET_ROW_MEM: Dict[Tuple[str, int, str], Optional[Dict[str, Any]]] = {}
+_TARGET_ROW_LOCK = threading.Lock()
+
+_EMPTY_TARGETS: Dict[str, Any] = {
+    "ytd": {"authorized": None, "activated_v1": None,
+            "activated": None, "senior": None},
+    "period": {"authorized": None, "activated_v1": None,
+               "activated": None, "senior": None},
+}
 
 
 def _build_so_events(year: str) -> Dict[str, Dict[str, Optional[str]]]:
@@ -143,6 +162,11 @@ def _build_so_events(year: str) -> Dict[str, Dict[str, Optional[str]]]:
     run: Dict[str, float] = {}
     try:
         with _conn() as conn:
+            # 只读扫表：临时加大 cache，冷启动扫红包明细更快
+            try:
+                conn.execute("PRAGMA cache_size=-128000")  # ~128MB
+            except sqlite3.Error:
+                pass
             rows = conn.execute(
                 f"""SELECT 上线客户编码 AS code, 上线时间 AS t,
                            COALESCE(产品序列号, '') AS sn,
@@ -171,6 +195,14 @@ def _build_so_events(year: str) -> Dict[str, Dict[str, Optional[str]]]:
     return out
 
 
+def _prune_stamp_cache(cache: dict, stamp: str, key_idx: int = -1) -> None:
+    """丢掉非当前生产库 stamp 的内存条目，避免每次导入后缓存膨胀。"""
+    dead = [k for k in cache
+            if (k[key_idx] if isinstance(k, tuple) else k) != stamp]
+    for k in dead:
+        cache.pop(k, None)
+
+
 def so_events(year: str) -> Dict[str, Dict[str, Optional[str]]]:
     """
     当年筛后 SO 事件。生产库文件没变就走内存 / funnel.db 缓存，
@@ -189,6 +221,7 @@ def so_events(year: str) -> Dict[str, Dict[str, Optional[str]]]:
         init_schema()
         cached = load_so_event_cache(year, stamp)
         if cached is not None:
+            _prune_stamp_cache(_SO_MEM, stamp, 2)
             _SO_MEM[key] = cached
             return cached
         built = _build_so_events(year)
@@ -196,8 +229,82 @@ def so_events(year: str) -> Dict[str, Dict[str, Optional[str]]]:
             save_so_event_cache(year, stamp, built)
         except sqlite3.Error:
             pass
+        _prune_stamp_cache(_SO_MEM, stamp, 2)
         _SO_MEM[key] = built
         return built
+
+
+def warm_caches(year: Optional[str] = None) -> Dict[str, Any]:
+    """进程启动时预热 SO / 签约主表 / 地区树，避免首个请求卡几秒。"""
+    if not available():
+        return {"ok": False, "reason": "prod unavailable"}
+    y = year or _so_year(None, None)
+    import time
+    t0 = time.monotonic()
+    n_so = len(so_events(y))
+    n_ct = len(_all_contracts())
+    tree = geo_tree()
+    return {
+        "ok": True, "year": y, "so_events": n_so, "contracts": n_ct,
+        "cities": (tree or {}).get("city_count"),
+        "ms": int((time.monotonic() - t0) * 1000),
+    }
+
+
+def _all_contracts() -> List[Dict[str, Any]]:
+    """
+    全省非授牌签约行（精简列）。按生产库 stamp 缓存在进程内；
+    切地市/周期只做内存过滤，不再反复扫 provider_contract。
+    """
+    stamp = _prod_file_stamp()
+    hit = _CONTRACT_MEM.get(stamp)
+    if hit is not None:
+        return hit
+    with _CONTRACT_LOCK:
+        hit = _CONTRACT_MEM.get(stamp)
+        if hit is not None:
+            return hit
+        rows: List[Dict[str, Any]] = []
+        with _conn() as conn:
+            try:
+                conn.execute("PRAGMA cache_size=-64000")
+            except sqlite3.Error:
+                pass
+            cur = conn.execute(
+                f"""SELECT 客户编码 AS code,
+                           客户城市 AS city,
+                           客户区县 AS district,
+                           date(签约日期) AS signed,
+                           date(激活时间) AS act,
+                           {TIER_RANK} AS rank,
+                           CASE WHEN {CERT_YES} THEN 1 ELSE 0 END AS is_cert
+                    FROM provider_contract
+                    WHERE {NOT_PLAQUE}""")
+            for r in cur:
+                rows.append({
+                    "code": r["code"], "city": r["city"],
+                    "district": r["district"], "signed": r["signed"],
+                    "act": r["act"], "rank": r["rank"],
+                    "is_cert": int(r["is_cert"] or 0),
+                })
+        _CONTRACT_MEM.clear()
+        _CONTRACT_MEM[stamp] = rows
+        return rows
+
+
+def _freshness() -> Dict[str, Optional[str]]:
+    stamp = _prod_file_stamp()
+    hit = _FRESH_MEM.get(stamp)
+    if hit is not None:
+        return hit
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT MAX(date(签约日期)) s, MAX(date(激活时间)) a "
+            "FROM provider_contract").fetchone()
+    out = {"s": row["s"] if row else None, "a": row["a"] if row else None}
+    _FRESH_MEM.clear()
+    _FRESH_MEM[stamp] = out
+    return out
 
 
 def available() -> bool:
@@ -223,23 +330,30 @@ def geo_tree() -> Optional[Dict[str, Any]]:
     """
     if not available():
         return None
+    stamp = _prod_file_stamp()
+    if stamp in _GEO_TREE_MEM:
+        return _GEO_TREE_MEM[stamp]
     with _conn() as conn:
         rows = conn.execute(
             "SELECT 省份, 城市, 区县 FROM district_base "
             "WHERE 城市 IS NOT NULL AND 城市 <> '' ORDER BY 城市, 区县"
         ).fetchall()
     if not rows:
+        _GEO_TREE_MEM[stamp] = None
         return None
     province = rows[0]["省份"]
     cities: Dict[str, List[str]] = {}
     for r in rows:
         cities.setdefault(r["城市"], []).append(r["区县"])
-    return {
+    out = {
         "province": province,
         "cities": [{"city": c, "districts": d} for c, d in cities.items()],
         "city_count": len(cities),
         "district_count": len(rows),
     }
+    _GEO_TREE_MEM.clear()
+    _GEO_TREE_MEM[stamp] = out
+    return out
 
 
 def cert_values() -> Optional[Dict[str, Any]]:
@@ -392,6 +506,57 @@ def _month_rhythm(conn, year: int, month: int,
     return None
 
 
+def _rhythm_by_level(year: int, month: int) -> Dict[str, Optional[float]]:
+    """
+    一次读出当月各档节奏（authorized/activated/senior），按生产库 stamp+年月缓存。
+    卷积/预算矩阵会对数十个地区反复取节奏，绝不能每次开库扫 kpi_rhythm。
+    值为 None 表示库里没有该月节奏（调用方回落 1/12 并写 notes）。
+    """
+    stamp = _prod_file_stamp()
+    key = (stamp, int(year), int(month))
+    hit = _RHYTHM_MEM.get(key)
+    if hit is not None:
+        return hit
+    with _RHYTHM_LOCK:
+        hit = _RHYTHM_MEM.get(key)
+        if hit is not None:
+            return hit
+        out: Dict[str, Optional[float]] = {}
+        if available():
+            with _conn() as conn:
+                for level, pairs in RHYTHM_BY_LEVEL.items():
+                    r = _month_rhythm(conn, year, month, pairs)
+                    out[level] = float(r) if r is not None else None
+        else:
+            for level in RHYTHM_BY_LEVEL:
+                out[level] = None
+        _prune_stamp_cache(_RHYTHM_MEM, stamp, 0)
+        _RHYTHM_MEM[key] = out
+        return out
+
+
+def _cached_target_row(city: Optional[str],
+                       year: int) -> Optional[Dict[str, Any]]:
+    """provider_target 单行，按 stamp+年+地市缓存，避免卷积时反复开库。"""
+    stamp = _prod_file_stamp()
+    city_key = city or TARGET_CITY_ALL
+    key = (stamp, int(year), city_key)
+    if key in _TARGET_ROW_MEM:
+        return _TARGET_ROW_MEM[key]
+    with _TARGET_ROW_LOCK:
+        if key in _TARGET_ROW_MEM:
+            return _TARGET_ROW_MEM[key]
+        row_dict: Optional[Dict[str, Any]] = None
+        if available():
+            with _conn() as conn:
+                row = _target_row(conn, city, year)
+                if row is not None:
+                    row_dict = {k: row[k] for k in row.keys()}
+        _prune_stamp_cache(_TARGET_ROW_MEM, stamp, 0)
+        _TARGET_ROW_MEM[key] = row_dict
+        return row_dict
+
+
 def targets(city: Optional[str] = None, district: Optional[str] = None,
             period_key: Optional[str] = None,
             year: Optional[int] = None, month: Optional[int] = None,
@@ -407,105 +572,103 @@ def targets(city: Optional[str] = None, district: Optional[str] = None,
     if not available():
         return None
 
-    with _conn() as conn:
-        # 区县没有下发目标：任务表 / provider_target 都只到地市
-        if district:
-            return {
-                "ytd": {"authorized": None, "activated_v1": None,
-                        "activated": None, "senior": None},
-                "period": {"authorized": None, "activated_v1": None,
-                           "activated": None, "senior": None},
-                "scope": "district",
-                "editable": True,
-                "notes": ["目标只下发到地市级，区县无下发目标，请手动填写。"],
-            }
+    # 区县：任务表 / provider_target 都只到地市 —— 直接返回，不开生产库。
+    if district:
+        return {
+            **{k: dict(v) for k, v in _EMPTY_TARGETS.items()},
+            "scope": "district",
+            "editable": True,
+            "notes": ["目标只下发到地市级，区县无下发目标，请手动填写。"],
+        }
 
-        overlay = year_targets_overlay(year, city)
-        row = _target_row(conn, city, year)
+    overlay = year_targets_overlay(year, city)
+    rhythms = _rhythm_by_level(year, month) if year and month else {}
+    auth_rhythm = rhythms.get("authorized") if rhythms else None
 
-        if overlay is None and row is None:
+    # 有省区填写任务表时：核心数字走 overlay；aside 仍读一行 provider_target。
+    pool = new_sign = None
+    row = _cached_target_row(city, year) if year else None
+    if overlay is None:
+        if row is None:
             return {
-                "ytd": {"authorized": None, "activated_v1": None,
-                        "activated": None, "senior": None},
-                "period": {"authorized": None, "activated_v1": None,
-                           "activated": None, "senior": None},
+                **{k: dict(v) for k, v in _EMPTY_TARGETS.items()},
                 "scope": "city" if city else "province",
                 "editable": True,
                 "notes": [f"{year} 年{city or '全省'}未找到下发目标"
                           f"（year_targets / provider_target）。"],
             }
+        keys = row.keys()
+        pool = row["服务商预测总家数"] if "服务商预测总家数" in keys else None
+        new_sign = row["新签目标"] if "新签目标" in keys else None
+        authorized = row["服务商签约数_含个人"] if "服务商签约数_含个人" in keys else None
+        activated = None
+        senior = None
+        notes = [
+            "全年目标取自 provider_target（年初下达），库内即权威值，页面不可改。",
+            "「已开单 V1+」「已激活 V2+」「高级服务商 V3+」本年来源无省区填写"
+            "任务表覆盖，V2+/V3+ 不套用库内安装红包分档（若有），请手动填写。",
+        ]
+        source_row = {"地市": row["地市"], "年度": row["年度"],
+                      "source": "provider_target"}
+    else:
+        authorized = overlay["authorized"]
+        activated = overlay["activated"]
+        senior = overlay["senior"]
+        if row is not None:
+            keys = row.keys()
+            pool = row["服务商预测总家数"] if "服务商预测总家数" in keys else None
+            new_sign = row["新签目标"] if "新签目标" in keys else None
+        notes = [
+            f"全年目标取自「{overlay['source']}」"
+            + (f"（{overlay['as_of']}）" if overlay.get("as_of") else "")
+            + "，与漏斗等级同口径；家数已取整，页面不可改。",
+            "主看全年缺口（全年目标 − 期末存量）；本期目标按月节奏分解，作过程辅看。",
+            "「已开单 V1+」任务表无对应档，请手动填写。",
+        ]
+        source_row = {"地市": city or TARGET_CITY_ALL, "年度": year,
+                      "source": "year_targets"}
 
-        keys = row.keys() if row is not None else []
-        pool = row["服务商预测总家数"] if row is not None and "服务商预测总家数" in keys else None
-        new_sign = row["新签目标"] if row is not None and "新签目标" in keys else None
+    if auth_rhythm is None:
+        rhythm = 1.0 / 12
+        notes.append(f"{year} 年未找到「服务商签约」月度节奏（kpi_rhythm），"
+                     f"本期目标按 1/12 均分估算。")
+    else:
+        rhythm = auth_rhythm
+        notes.append(f"本期目标 = 全年目标 × {month} 月节奏占比 "
+                     f"{round(rhythm * 100, 1)}%（kpi_rhythm · 服务商签约）。")
+        if rhythm > 0.3:
+            notes.append(f"⚠️ {month} 月节奏占比达 {round(rhythm * 100)}%，"
+                         f"这一格是年初结转的存量签约数，不是当月新签目标，"
+                         f"不宜直接当增量考核。")
 
-        if overlay is not None:
-            authorized = overlay["authorized"]
-            activated = overlay["activated"]
-            senior = overlay["senior"]
-            notes = [
-                f"全年目标取自「{overlay['source']}」"
-                + (f"（{overlay['as_of']}）" if overlay.get("as_of") else "")
-                + "，与漏斗等级同口径；家数已取整，页面不可改。",
-                "主看全年缺口（全年目标 − 期末存量）；本期目标按月节奏分解，作过程辅看。",
-                "「已开单 V1+」任务表无对应档，请手动填写。",
-            ]
-            source_row = {"地市": city or TARGET_CITY_ALL, "年度": year,
-                          "source": "year_targets"}
-        else:
-            authorized = row["服务商签约数_含个人"] if "服务商签约数_含个人" in keys else None
-            activated = None
-            senior = None
-            notes = [
-                "全年目标取自 provider_target（年初下达），库内即权威值，页面不可改。",
-                "「已开单 V1+」「已激活 V2+」「高级服务商 V3+」本年来源无省区填写"
-                "任务表覆盖，V2+/V3+ 不套用库内安装红包分档（若有），请手动填写。",
-            ]
-            source_row = {"地市": row["地市"], "年度": row["年度"],
-                          "source": "provider_target"}
+    if week_share:
+        notes.append("周目标 = 月目标 ÷ 当月周数（节奏只到月粒度，周内按均分）。")
 
-        rhythm = _month_rhythm(conn, year, month, RHYTHM_BY_LEVEL["authorized"])
-        rhythm_src = "服务商签约"
-        if rhythm is None:
-            rhythm = 1.0 / 12
-            notes.append(f"{year} 年未找到「服务商签约」月度节奏（kpi_rhythm），"
-                         f"本期目标按 1/12 均分估算。")
-        else:
-            notes.append(f"本期目标 = 全年目标 × {month} 月节奏占比 "
-                         f"{round(rhythm * 100, 1)}%（kpi_rhythm · {rhythm_src}）。")
-            if rhythm > 0.3:
-                notes.append(f"⚠️ {month} 月节奏占比达 {round(rhythm * 100)}%，"
-                             f"这一格是年初结转的存量签约数，不是当月新签目标，"
-                             f"不宜直接当增量考核。")
+    def per(v, level: str):
+        if v is None:
+            return None
+        r = rhythms.get(level) if rhythms else None
+        if r is None:
+            r = rhythm
+        share = r * (week_share if week_share else 1.0)
+        return int(round(v * share))
 
-        if week_share:
-            notes.append("周目标 = 月目标 ÷ 当月周数（节奏只到月粒度，周内按均分）。")
-
-        def per(v, level: str):
-            if v is None:
-                return None
-            r = _month_rhythm(conn, year, month, RHYTHM_BY_LEVEL.get(level, [RHYTHM_SIGN]))
-            if r is None:
-                r = rhythm
-            share = r * (week_share if week_share else 1.0)
-            return int(round(v * share))
-
-        return {
-            "ytd": {"authorized": authorized, "activated_v1": None,
-                    "activated": activated, "senior": senior},
-            "period": {"authorized": per(authorized, "authorized"),
-                       "activated_v1": None,
-                       "activated": per(activated, "activated"),
-                       "senior": per(senior, "senior")},
-            "scope": "city" if city else "province",
-            "editable": False,          # 全年目标只读
-            "period_editable": True,    # 本期目标是预设值，用户可改
-            "rhythm": round(rhythm, 6),
-            "week_share": week_share,
-            "aside": {"pool_target": pool, "new_sign_target": new_sign},
-            "source_row": source_row,
-            "notes": notes,
-        }
+    return {
+        "ytd": {"authorized": authorized, "activated_v1": None,
+                "activated": activated, "senior": senior},
+        "period": {"authorized": per(authorized, "authorized"),
+                   "activated_v1": None,
+                   "activated": per(activated, "activated"),
+                   "senior": per(senior, "senior")},
+        "scope": "city" if city else "province",
+        "editable": False,          # 全年目标只读
+        "period_editable": True,    # 本期目标是预设值，用户可改
+        "rhythm": round(rhythm, 6),
+        "week_share": week_share,
+        "aside": {"pool_target": pool, "new_sign_target": new_sign},
+        "source_row": source_row,
+        "notes": notes,
+    }
 
 
 def target_values() -> Optional[Dict[str, Any]]:
@@ -585,94 +748,85 @@ def funnel_data(city: Optional[str] = None,
                 f"WHERE 数据时点 = ? AND COALESCE(客户名称,'') <> ''{gf2}",
                 [snap] + gp2)["v"]
 
-        gf3, gp3 = _geo_filter(city, district, "客户城市", "客户区县")
-        events = so_events(_so_year(end, start)) if (start or end) else {}
+        # 潜客池仍走库查询（体量小）；签约主表 / SO 事件在外层用 stamp 缓存。
 
-        rows = conn.execute(
-            f"""SELECT 客户编码 AS code,
-                       date(签约日期) AS signed,
-                       date(激活时间) AS act,
-                       {TIER_RANK} AS rank,
-                       CASE WHEN {CERT_YES} THEN 1 ELSE 0 END AS is_cert
-                FROM provider_contract
-                WHERE {NOT_PLAQUE}{gf3}""",
-            gp3,
-        ).fetchall()
+    events = so_events(_so_year(end, start)) if (start or end) else {}
+    contracts = _all_contracts()
+    authorized = activated_v1 = activated = senior = 0
+    cert_n = nocert_n = 0
+    tiers = {f"v{lv}": 0 for lv in range(6)}
+    p_auth = p_v1 = p_v2 = p_v3 = 0
 
-        authorized = activated_v1 = activated = senior = 0
-        cert_n = nocert_n = 0
-        tiers = {f"v{lv}": 0 for lv in range(6)}
-        p_auth = p_v1 = p_v2 = p_v3 = 0
+    for r in contracts:
+        if city and r["city"] != city:
+            continue
+        if district and r["district"] != district:
+            continue
+        signed, act, rank = r["signed"], r["act"], r["rank"]
+        is_cert = bool(r["is_cert"])
+        ev = events.get(r["code"] or "") or {}
+        first_so, v3_time = ev.get("first_so"), ev.get("v3_time")
 
-        for r in rows:
-            signed, act, rank = r["signed"], r["act"], r["rank"]
-            is_cert = bool(r["is_cert"])
-            ev = events.get(r["code"] or "") or {}
-            first_so, v3_time = ev.get("first_so"), ev.get("v3_time")
+        in_cert = True
+        if cert == "cert":
+            in_cert = is_cert
+        elif cert == "nocert":
+            in_cert = not is_cert
 
-            in_cert = True
-            if cert == "cert":
-                in_cert = is_cert
-            elif cert == "nocert":
-                in_cert = not is_cert
+        asof_ok = (not end) or (signed is not None and signed <= end)
+        if asof_ok:
+            if is_cert:
+                cert_n += 1
+            else:
+                nocert_n += 1
 
-            asof_ok = (not end) or (signed is not None and signed <= end)
-            if asof_ok:
-                if is_cert:
-                    cert_n += 1
-                else:
-                    nocert_n += 1
+        if not in_cert:
+            continue
+        if asof_ok:
+            authorized += 1
+            if rank is not None:
+                v1_ok = rank >= 1 and first_so is not None and (
+                    not end or first_so <= end)
+                v2_ok = rank >= 2 and act is not None and (
+                    not end or act <= end)
+                v3_ok = (rank >= 3 and v2_ok and v3_time is not None and (
+                    not end or v3_time <= end))
+                if v1_ok:
+                    activated_v1 += 1
+                if v2_ok:
+                    activated += 1
+                if v3_ok:
+                    senior += 1
+                if rank == 0:
+                    tiers["v0"] += 1
+                elif rank == 1 and v1_ok:
+                    tiers["v1"] += 1
+                elif rank == 2 and v2_ok:
+                    tiers["v2"] += 1
+                elif rank in (3, 4, 5) and v3_ok:
+                    tiers[f"v{rank}"] += 1
 
-            if not in_cert:
-                continue
-            if asof_ok:
-                authorized += 1
-                if rank is not None:
-                    v1_ok = rank >= 1 and first_so is not None and (
-                        not end or first_so <= end)
-                    v2_ok = rank >= 2 and act is not None and (
-                        not end or act <= end)
-                    v3_ok = (rank >= 3 and v2_ok and v3_time is not None and (
-                        not end or v3_time <= end))
-                    if v1_ok:
-                        activated_v1 += 1
-                    if v2_ok:
-                        activated += 1
-                    if v3_ok:
-                        senior += 1
-                    if rank == 0:
-                        tiers["v0"] += 1
-                    elif rank == 1 and v1_ok:
-                        tiers["v1"] += 1
-                    elif rank == 2 and v2_ok:
-                        tiers["v2"] += 1
-                    elif rank in (3, 4, 5) and v3_ok:
-                        tiers[f"v{rank}"] += 1
-
-            if start and end:
-                if signed is not None and start <= signed <= end:
-                    p_auth += 1
-                if rank is not None:
-                    if rank >= 1 and first_so is not None and start <= first_so <= end:
-                        p_v1 += 1
-                    if rank >= 2 and act is not None and start <= act <= end:
-                        p_v2 += 1
-                    if rank >= 3 and v3_time is not None and start <= v3_time <= end:
-                        p_v3 += 1
-
-        period: Dict[str, Optional[int]] = {}
         if start and end:
-            period = {
-                "authorized": p_auth,
-                "activated_v1": p_v1,
-                "activated": p_v2,
-                "senior": p_v3,
-            }
-        cert_split = {"cert": cert_n, "nocert": nocert_n}
+            if signed is not None and start <= signed <= end:
+                p_auth += 1
+            if rank is not None:
+                if rank >= 1 and first_so is not None and start <= first_so <= end:
+                    p_v1 += 1
+                if rank >= 2 and act is not None and start <= act <= end:
+                    p_v2 += 1
+                if rank >= 3 and v3_time is not None and start <= v3_time <= end:
+                    p_v3 += 1
 
-        # ── 数据新鲜度 ──
-        fresh = q("SELECT MAX(date(签约日期)) s, MAX(date(激活时间)) a "
-                  "FROM provider_contract")
+    period: Dict[str, Optional[int]] = {}
+    if start and end:
+        period = {
+            "authorized": p_auth,
+            "activated_v1": p_v1,
+            "activated": p_v2,
+            "senior": p_v3,
+        }
+    cert_split = {"cert": cert_n, "nocert": nocert_n}
+    fresh = _freshness()
 
     penetration = round(authorized / pool * 100, 1) if pool else None
 

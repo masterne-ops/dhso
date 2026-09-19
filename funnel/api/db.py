@@ -7,7 +7,7 @@ from __future__ import annotations
 import sqlite3
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 DB_PATH = Path(__file__).parent.parent / "data" / "funnel.db"
 
@@ -233,22 +233,39 @@ def save_state(geo_key: str, period_type: str, period_key: str, state: dict) -> 
 
 def load_latest_state(geo_key: str, period_key: str) -> Optional[Dict[str, Any]]:
     """Return the stored slice for this geo+period, or None."""
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT state_json FROM funnel_state WHERE geo_key=? AND period_key=?",
-            (geo_key, period_key)
-        ).fetchone()
-    if row:
+    row = _load_state_row(geo_key, period_key)
+    if row and row.get("state_json"):
         return json.loads(row["state_json"])
     return None
 
 
 def get_state_meta(geo_key: str, period_key: str) -> Optional[Dict[str, Any]]:
     """Return slice metadata (period_type, created_at, updated_at) without the blob."""
+    row = _load_state_row(geo_key, period_key)
+    if not row:
+        return None
+    return {k: row[k] for k in ("period_type", "created_at", "updated_at")}
+
+
+def load_state_bundle(geo_key: str, period_key: str
+                      ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """一次查出 state + meta，避免 /state 接口连开两次库。"""
+    row = _load_state_row(geo_key, period_key)
+    if not row:
+        return None, None
+    try:
+        state = json.loads(row["state_json"]) if row.get("state_json") else None
+    except (json.JSONDecodeError, TypeError):
+        state = None
+    meta = {k: row[k] for k in ("period_type", "created_at", "updated_at")}
+    return state, meta
+
+
+def _load_state_row(geo_key: str, period_key: str) -> Optional[Dict[str, Any]]:
     with get_conn() as conn:
         row = conn.execute(
-            """SELECT period_type, created_at, updated_at FROM funnel_state
-               WHERE geo_key=? AND period_key=?""",
+            """SELECT state_json, period_type, created_at, updated_at
+               FROM funnel_state WHERE geo_key=? AND period_key=?""",
             (geo_key, period_key)
         ).fetchone()
     return dict(row) if row else None
@@ -436,6 +453,22 @@ def upsert_factor_cache(geo_key: str, period_key: str, factor_id: str, value: fl
                DO UPDATE SET value=excluded.value,
                              computed_at=datetime('now','localtime')""",
             (factor_id, geo_key, period_key, value)
+        )
+
+
+def upsert_factor_cache_many(geo_key: str, period_key: str,
+                            values: Dict[str, float]):
+    """批量写因子缓存，一次事务，避免每个因子开一次库。"""
+    if not values:
+        return
+    with get_conn() as conn:
+        conn.executemany(
+            """INSERT INTO funnel_factor_value_cache(factor_id,geo_key,period_key,value)
+               VALUES(?,?,?,?)
+               ON CONFLICT(factor_id,geo_key,period_key)
+               DO UPDATE SET value=excluded.value,
+                             computed_at=datetime('now','localtime')""",
+            [(fid, geo_key, period_key, val) for fid, val in values.items()]
         )
 
 

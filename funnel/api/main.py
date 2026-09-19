@@ -141,6 +141,15 @@ def _login_page(*, next_to: str, username: str = "", error: str = "",
 async def lifespan(app: FastAPI):
     init_schema()
     seed_factor_defs(SEED_DEFS)
+    # 后台预热生产库缓存，不阻塞启动；首个用户请求大概率直接命中内存。
+    try:
+        import threading
+        from .prod_db import warm_caches, available as prod_available
+        if prod_available():
+            threading.Thread(target=warm_caches, name="warm-prod",
+                             daemon=True).start()
+    except Exception:
+        pass
     yield
 
 

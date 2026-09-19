@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from ..db import (
     save_state, load_latest_state, get_state_meta, list_slices,
     list_factor_defs, get_cached_factor_values, upsert_factor_cache,
+    upsert_factor_cache_many, load_state_bundle,
 )
 from ..factors import (
     FETCHERS, compute_all, redpack_values as prod_redpack_values,
@@ -132,11 +133,10 @@ def get_state(request: Request,
               geo_key: str = GeoKey, period_key: str = PeriodKey):
     """Return the stored slice for this geo+period."""
     require_geo(request, geo_key)
-    state = load_latest_state(geo_key, period_key)
+    state, meta = load_state_bundle(geo_key, period_key)
     if state is None:
         return {"found": False, "state": {}, "meta": None}
-    return {"found": True, "state": state,
-            "meta": get_state_meta(geo_key, period_key)}
+    return {"found": True, "state": state, "meta": meta}
 
 
 @router.post("/state")
@@ -229,6 +229,7 @@ def get_factor_values(request: Request,
     values, details = dict(cached), {}
     if missing:
         fresh = compute_all(city, district, start, end)
+        to_cache = {}
         for fid in missing:
             d = fresh.get(fid)
             values[fid] = d.get("value") if isinstance(d, dict) else None
@@ -236,7 +237,9 @@ def get_factor_values(request: Request,
             # 只缓存算得出的值；None（无样本）不写缓存，下次照样现算 —— 期中
             # 才发的券否则会被 1 小时前的「无样本」盖住。
             if values[fid] is not None:
-                upsert_factor_cache(geo_key, period_key, fid, values[fid])
+                to_cache[fid] = values[fid]
+        if to_cache:
+            upsert_factor_cache_many(geo_key, period_key, to_cache)
 
     return {"geo_key": geo_key, "period_key": period_key,
             "range": {"start": start, "end": end},
